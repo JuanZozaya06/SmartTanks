@@ -65,10 +65,35 @@
           <span class="percentage">{{ tank.percentage === null ? '—' : tank.percentage + '%' }}</span>
         </div>
 
-        <div class="gauge" aria-hidden="true">
-          <div class="gauge__water" [style.height.%]="tank.percentage ?? 0"></div>
-          <div class="gauge__mark gauge__mark--high"></div>
-          <div class="gauge__mark gauge__mark--low"></div>
+        <div
+          class="tank-visual"
+          role="img"
+          [attr.aria-label]="tank.name + ': ' + (tank.percentage === null ? 'nivel no disponible' : tank.percentage + '% de nivel')"
+        >
+          <div class="tank-visual__shadow" aria-hidden="true"></div>
+          <div class="tank-vessel" aria-hidden="true">
+            <div
+              class="tank-water"
+              [class.tank-water--empty]="(tank.percentage ?? 0) <= 0"
+              [style.height.%]="tank.percentage ?? 0"
+            >
+              <svg class="tank-wave tank-wave--back" viewBox="0 0 360 32" preserveAspectRatio="none">
+                <path d="M0 15 C42 5 72 24 116 14 C156 5 188 22 228 13 C272 3 309 23 360 12 L360 32 L0 32 Z" />
+              </svg>
+              <svg class="tank-wave tank-wave--front" viewBox="0 0 360 32" preserveAspectRatio="none">
+                <path d="M0 17 C45 27 76 7 120 17 C165 27 198 8 241 16 C282 24 317 8 360 16 L360 32 L0 32 Z" />
+              </svg>
+            </div>
+
+            <div class="tank-scale">
+              <span class="tank-scale__mark tank-scale__mark--high">75</span>
+              <span class="tank-scale__mark tank-scale__mark--middle">50</span>
+              <span class="tank-scale__mark tank-scale__mark--low">25</span>
+            </div>
+            <div class="tank-vessel__shine"></div>
+          </div>
+          <div class="tank-rim" aria-hidden="true"></div>
+          <div class="tank-base" aria-hidden="true"></div>
         </div>
 
         <dl class="metrics">
