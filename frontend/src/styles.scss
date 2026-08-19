@@ -1,0 +1,27 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap');
+
+:root {
+  color: #173b37;
+  background: #f4f8f7;
+  font-family: 'Manrope', system-ui, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background:
+    radial-gradient(circle at 84% 2%, rgb(102 199 193 / 14%), transparent 28rem),
+    #f4f8f7;
+}
+
+button,
+input {
+  font: inherit;
+}

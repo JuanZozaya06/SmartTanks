@@ -1,0 +1,29 @@
+# Environment and local tooling
+.env
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+**/.venv*/
+**/venv*/
+
+# Angular / Node
+frontend/node_modules*/
+frontend/package-lock.ng19.json
+frontend/dist/
+frontend/.angular/
+frontend/coverage/
+
+# Editors and OS
+.idea/
+.DS_Store
+Thumbs.db
+
+# Firmware credentials: each physical device has its own secret.
+firmware/SmartTanksProvisioning/arduino_secrets.h

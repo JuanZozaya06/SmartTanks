@@ -1,0 +1,49 @@
+<section class="device-setup" aria-labelledby="device-setup-title">
+  <header>
+    <div>
+      <p class="eyebrow">NUEVO SMARTTANK</p>
+      <h2 id="device-setup-title">Asocia tu SmartTank</h2>
+      <p>Ingresa los datos que vienen con el equipo y el nombre con el que quieres identificarlo.</p>
+    </div>
+    <button class="close" type="button" (click)="closed.emit()" aria-label="Cerrar">×</button>
+  </header>
+
+  <form class="claim-form" [formGroup]="claimForm" (ngSubmit)="claim()">
+    <label>
+      ID del SmartTank
+      <input
+        formControlName="deviceId"
+        placeholder="smarttank-84f703123456"
+        autocomplete="off"
+      />
+    </label>
+
+    <label>
+      PIN de 8 dígitos
+      <input
+        formControlName="setupPin"
+        inputmode="numeric"
+        maxlength="8"
+        autocomplete="one-time-code"
+      />
+    </label>
+
+    <label>
+      Nombre para identificarlo
+      <input formControlName="label" placeholder="Ej. SmartTank del patio" />
+    </label>
+
+    <p class="form-help">
+      Si el ID y el PIN coinciden, el SmartTank quedará asociado a esta casa y sus mediciones
+      aparecerán en tu panel.
+    </p>
+
+    <button class="primary-action" type="submit" [disabled]="claiming()">
+      {{ claiming() ? 'Asociando…' : 'Asociar SmartTank' }}
+    </button>
+  </form>
+
+  @if (error()) {
+    <p class="form-error" role="alert">{{ error() }}</p>
+  }
+</section>

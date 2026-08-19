@@ -1,0 +1,24 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "readings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "homeId", "order": "ASCENDING" },
+        { "fieldPath": "tankId", "order": "ASCENDING" },
+        { "fieldPath": "observedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "deviceEvents",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "homeId", "order": "ASCENDING" },
+        { "fieldPath": "deviceId", "order": "ASCENDING" },
+        { "fieldPath": "occurredAt", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
+

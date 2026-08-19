@@ -1,0 +1,54 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isHomeMember(homeId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/homes/$(homeId)/members/$(request.auth.uid));
+    }
+
+    // El navegador puede leer únicamente datos de casas a las que pertenece.
+    // Toda escritura pasa por la API para centralizar validación y auditoría.
+    match /homes/{homeId} {
+      allow read: if isHomeMember(homeId);
+      allow write: if false;
+
+      match /members/{memberId} {
+        allow read: if isHomeMember(homeId);
+        allow write: if false;
+      }
+
+      match /tanks/{tankId} {
+        allow read: if isHomeMember(homeId);
+        allow write: if false;
+      }
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn() && request.auth.uid == userId;
+      allow write: if false;
+    }
+
+    match /devices/{deviceId} {
+      allow read, write: if false;
+    }
+
+    match /auditLogs/{auditId} {
+      allow read, write: if false;
+    }
+
+    match /readings/{readingId} {
+      allow read: if isHomeMember(resource.data.homeId);
+      allow write: if false;
+    }
+
+    match /deviceEvents/{eventId} {
+      allow read: if isHomeMember(resource.data.homeId);
+      allow write: if false;
+    }
+  }
+}

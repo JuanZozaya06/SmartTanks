@@ -1,0 +1,88 @@
+<main class="setup-shell">
+  <header>
+    <div>
+      <p class="eyebrow">CONFIGURACIÓN INICIAL</p>
+      <h1>Prepara tu casa y tus tanques</h1>
+      <p>Usaremos estas medidas para convertir presión en porcentaje y litros.</p>
+    </div>
+    <button class="text-action" type="button" (click)="logout.emit()">Cerrar sesión</button>
+  </header>
+
+  <form [formGroup]="form" (ngSubmit)="submit()">
+    <section class="home-card">
+      <div class="section-heading">
+        <span>01</span>
+        <div>
+          <h2>Tu hogar</h2>
+          <p>La zona horaria permite ordenar correctamente lecturas y eventos.</p>
+        </div>
+      </div>
+      <div class="field-grid field-grid--home">
+        <label>
+          Nombre de la casa
+          <input formControlName="homeName" placeholder="Ej. Casa principal" />
+        </label>
+        <label>
+          Zona horaria
+          <input formControlName="timezone" />
+        </label>
+      </div>
+    </section>
+
+    <section class="tank-section">
+      <div class="section-heading">
+        <span>02</span>
+        <div>
+          <h2>Medidas reales</h2>
+          <p>Mide el interior de cada tanque. Puedes calcular la capacidad cilíndrica.</p>
+        </div>
+      </div>
+
+      <div class="tank-grid">
+        @for (tank of [1, 2]; track tank) {
+          <article class="tank-form">
+            <p class="tank-number">TANQUE {{ tank }}</p>
+            <label>
+              Nombre
+              <input [formControlName]="tank === 1 ? 'tank1Name' : 'tank2Name'" />
+            </label>
+            <div class="field-grid">
+              <label>
+                Altura interna (cm)
+                <input type="number" min="1" step="0.1" [formControlName]="tank === 1 ? 'tank1Height' : 'tank2Height'" />
+              </label>
+              <label>
+                Diámetro interno (cm)
+                <input type="number" min="1" step="0.1" [formControlName]="tank === 1 ? 'tank1Diameter' : 'tank2Diameter'" />
+              </label>
+            </div>
+            <div class="capacity-row">
+              <label>
+                Capacidad (litros)
+                <input type="number" min="1" step="0.1" [formControlName]="tank === 1 ? 'tank1Capacity' : 'tank2Capacity'" />
+              </label>
+              <button type="button" class="calculate" (click)="calculateCapacity(tank === 1 ? 1 : 2)">
+                Calcular
+              </button>
+            </div>
+            <label>
+              Alerta de nivel bajo (%)
+              <input type="number" min="0" max="100" [formControlName]="tank === 1 ? 'tank1LowLevel' : 'tank2LowLevel'" />
+            </label>
+          </article>
+        }
+      </div>
+    </section>
+
+    @if (error()) {
+      <p class="form-error" role="alert">{{ error() }}</p>
+    }
+
+    <footer>
+      <p>Los valores podrán calibrarse con el tanque vacío y lleno posteriormente.</p>
+      <button class="primary-action" type="submit" [disabled]="submitting()">
+        {{ submitting() ? 'Creando configuración…' : 'Crear casa y comenzar' }}
+      </button>
+    </footer>
+  </form>
+</main>

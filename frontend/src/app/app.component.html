@@ -1,0 +1,26 @@
+@if (auth.user() === undefined || contextStatus() === 'loading') {
+  <main class="app-state">
+    <div>
+      <h1>Cargando SmartTanks</h1>
+      <p>Validando tu sesión y configuración.</p>
+    </div>
+  </main>
+} @else if (auth.user() === null) {
+  <app-auth-panel />
+} @else if (contextStatus() === 'error') {
+  <main class="app-state">
+    <div>
+      <h1>No pudimos cargar tu cuenta</h1>
+      <p>Comprueba la conexión e intenta nuevamente.</p>
+      <button type="button" (click)="loadContext()">Reintentar</button>
+    </div>
+  </main>
+} @else if (context()?.home) {
+  <app-dashboard [context]="context()!" (logout)="logout()" />
+} @else {
+  <app-home-setup
+    [displayName]="auth.user()?.displayName ?? null"
+    (created)="homeCreated($event)"
+    (logout)="logout()"
+  />
+}
