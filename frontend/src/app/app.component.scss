@@ -204,7 +204,7 @@ h2 {
 
 .metrics {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 12px;
   margin: 0;
 }
@@ -309,5 +309,5 @@ h2 {
   .summary { grid-template-columns: 1fr; }
   .summary article + article { border-top: 1px solid #e3eae8; border-left: 0; }
   .tank-grid { grid-template-columns: 1fr; }
-  .metrics { grid-template-columns: 1fr 1fr 1fr; }
+  .metrics { grid-template-columns: 1fr 1fr; }
 }

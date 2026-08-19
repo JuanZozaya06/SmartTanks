@@ -21,7 +21,7 @@ Tanque 2 ─ manguera ─ módulo de presión 2 ┘                         │
                                                                       └─ Panel Ionic en tablet y teléfono
 ```
 
-El ESP32 es un dispositivo de campo: lee sensores, calcula litros, guarda una cola temporal si no hay red y llama al API. La tablet no se comunica directamente con el ESP32; consulta el front/API hospedado.
+El ESP32 es un dispositivo de campo: lee la presión de los sensores, guarda una cola temporal si no hay red y llama al API. La API calcula porcentaje, altura de agua y litros usando la configuración de cada tanque. La tablet no se comunica directamente con el ESP32; consulta el front/API hospedado.
 
 No hace falta Raspberry Pi ni mini-PC para la primera versión si el backend estará hospedado. Más adelante se puede incorporar un hub local para automatizaciones y dispositivos que deban funcionar aunque no haya Internet.
 
@@ -95,19 +95,19 @@ su capacidad aproximada es:
 π × (0,255 m)² × 2 m = 0,408 m³ ≈ 408 L
 ```
 
-No sería un tanque de 1.000 L. Verificar medidas internas reales antes de programar la capacidad. Para un tanque cilíndrico:
+No sería un tanque de 1.000 L. Las medidas internas se configuran por tanque desde el panel. Para un tanque cilíndrico:
 
 ```text
 altura_agua_m = presión_kPa / 9,80665
 litros = π × radio_m² × altura_agua_m × 1000
 ```
 
-La implementación final debe calibrarse con dos puntos reales:
+La primera versión usa estos puntos:
 
-1. Tanque vacío: guardar lectura de presión como 0 %.
-2. Tanque lleno: guardar lectura de presión como 100 %.
+1. Tanque vacío: `0 kPa = 0 %`.
+2. Tanque lleno: guardar desde el panel la presión real actual como `fullPressureKpa = 100 %`.
 
-Así se compensan tolerancias del sensor, manguera, instalación y geometría real.
+El usuario introduce altura y diámetro internos, llena físicamente el tanque y pulsa **Usar presión actual**. La API descarta porcentajes o litros enviados por el dispositivo y los calcula con esta calibración. Más adelante puede añadirse una presión de vacío independiente para compensar el offset residual del sensor.
 
 ## Lectura y frecuencia
 
@@ -276,7 +276,12 @@ El dispositivo tiene una sola `homeId` activa. Si se mueve a otra casa, se reali
   "deviceId": "smarttank-84f703123456",
   "sensorId": "pressure-a",
   "name": "Tanque pressure-a",
-  "configurationStatus": "pending",
+  "configurationStatus": "configured",
+  "shape": "cylinder",
+  "heightCm": 200,
+  "diameterCm": 51,
+  "fullPressureKpa": 19.6,
+  "capacityLiters": 408.56,
   "discoveredAt": "2026-08-18T15:20:03Z",
   "status": "active"
 }
@@ -371,8 +376,7 @@ Ejemplo de lote:
       "sensorId": "pressure-a",
       "observedAt": "2026-08-18T15:20:00Z",
       "timestampQuality": "verified",
-      "pressureKpa": 13.4,
-      "liters": 276
+      "pressureKpa": 13.4
     }
   ]
 }
@@ -397,7 +401,7 @@ POST /v1/devices/{deviceId}/transfer-pin
 La primera pantalla debería mostrar:
 
 - Un tanque por cada sensor descubierto: presión y los valores de litros, porcentaje o nivel que estén disponibles.
-- Nombre personalizable sin cambiar la identidad técnica `deviceId + sensorId`.
+- Nombre, altura interna, diámetro interno y presión de lleno configurables sin cambiar la identidad técnica `deviceId + sensorId`.
 - Estado de conectividad: dispositivo online/offline y última comunicación.
 - Alertas: nivel bajo, lectura desactualizada, sensor con error.
 - Gráfica de consumo por día, semana y mes.
@@ -408,7 +412,7 @@ Más adelante se pueden sumar luces, interruptores inteligentes, consumo eléctr
 
 ## Decisiones pendientes antes de construir
 
-1. Medir correctamente dimensiones internas y capacidad real de ambos tanques.
+1. Medir correctamente las dimensiones internas de ambos tanques e ingresarlas en el panel.
 2. Comprar un módulo de prueba y verificar su lectura con una columna de agua real.
 3. Confirmar pines macho/headers incluidos en los módulos.
 4. Elegir intervalo inicial: 30 segundos recomendado para visualización casi en tiempo real.
@@ -420,8 +424,8 @@ Más adelante se pueden sumar luces, interruptores inteligentes, consumo eléctr
 
 1. Validar un módulo de presión con un tanque real.
 2. Conectar un módulo al ESP32 y leer valores crudos.
-3. Hacer calibración vacío/lleno.
-4. Implementar medición estable y cálculo de litros.
+3. Con el tanque lleno, guardar en el panel la presión actual como punto de 100 %.
+4. Implementar medición estable de presión en el firmware.
 5. Crear API de prueba y envío HTTPS.
 6. Implementar cola persistente de pendientes y sincronización por lote.
 7. Crear Firebase/Auth/modelo de datos/claim de dispositivo.

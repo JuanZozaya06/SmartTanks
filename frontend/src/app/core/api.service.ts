@@ -8,6 +8,7 @@ import {
   DeviceSummary,
   HomeSetupRequest,
   TankConfiguration,
+  TankUpdateRequest,
 } from './models';
 import { runtimeConfig } from './runtime-config';
 
@@ -60,12 +61,12 @@ export class ApiService {
     );
   }
 
-  renameTank(homeId: string, tankId: string, name: string) {
+  updateTank(homeId: string, tankId: string, payload: TankUpdateRequest) {
     return this.authorizationHeaders().pipe(
       switchMap((headers) =>
         this.http.patch<{ tank: TankConfiguration }>(
           `${this.baseUrl}/v1/homes/${encodeURIComponent(homeId)}/tanks/${encodeURIComponent(tankId)}`,
-          { name },
+          payload,
           { headers },
         ),
       ),

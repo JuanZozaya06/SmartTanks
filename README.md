@@ -93,7 +93,7 @@ También implementa el onboarding autenticado del panel:
 - `GET /v1/me/context` para recuperar usuario, casa y tanques ya descubiertos.
 - `POST /v1/homes` para crear perfil, casa y membresía `owner`, sin precrear tanques.
 - `POST /v1/homes/{homeId}/devices/claim` para asociar mediante `deviceId + PIN + nombre`.
-- `PATCH /v1/homes/{homeId}/tanks/{tankId}` para personalizar el nombre de un tanque descubierto.
+- `PATCH /v1/homes/{homeId}/tanks/{tankId}` para configurar nombre, altura, diámetro y presión de lleno de un tanque descubierto.
 - `GET /v1/homes/{homeId}/devices` para listar los SmartTanks asociados.
 
 La API productiva está desplegada en:
@@ -109,6 +109,8 @@ El panel no contiene datos demostrativos. Sin sesión muestra acceso; sin casa m
 Al aceptar un lote nuevo, la API guarda el histórico en `readings`. La primera lectura de cada `sensorId` crea automáticamente `homes/{homeId}/tanks/{deviceId}:{sensorId}`; las siguientes actualizan su `latestReading`. El panel escucha la colección con Firestore `onSnapshot()`, por lo que detecta tanques nuevos sin consultar la API cada 30 segundos.
 
 El usuario crea su cuenta desde Angular y completa únicamente el nombre de la casa y la zona horaria. La API crea la membresía y el panel obtiene el `homeId` desde `/v1/me/context`; los tanques solo aparecen después de recibir datos reales.
+
+Cada tanque descubierto debe configurarse desde el panel con sus medidas internas y la presión observada al estar físicamente lleno. Para un cilindro, la API calcula capacidad, porcentaje, altura de agua y litros; no confía en valores derivados enviados por el SmartTank. La versión actual usa `0 kPa` como punto de vacío. Mientras falte alguna medida o la calibración de lleno, el panel muestra la presión real, pero no presenta litros ni porcentaje calculados.
 
 Antes de usar el registro, habilitar el proveedor **Correo electrónico/contraseña** en Firebase Authentication.
 

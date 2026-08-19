@@ -1,4 +1,4 @@
-@api = http://127.0.0.1:5001/smarttanks-830ba/us-east1/api
+@api = https://us-east1-smarttanks-830ba.cloudfunctions.net/api
 @deviceId = smarttank-84f703123456
 @deviceSecret = reemplazar-secreto
 @userToken = reemplazar-id-token-firebase-auth
@@ -59,9 +59,6 @@ Authorization: Bearer {{deviceSecret}}
       "timestampQuality": "verified",
       "elapsedMs": 910000,
       "pressureKpa": 13.4,
-      "waterHeightCm": 136.6,
-      "percentage": 68.3,
-      "liters": 276,
       "wifiRssi": -62
     },
     {
@@ -71,21 +68,21 @@ Authorization: Bearer {{deviceSecret}}
       "timestampQuality": "verified",
       "elapsedMs": 910000,
       "pressureKpa": 6.7,
-      "waterHeightCm": 68.3,
-      "percentage": 34.1,
-      "liters": 139,
       "wifiRssi": -62
     }
   ]
 }
 
-### Personalizar el nombre de un tanque descubierto
+### Configurar medidas y presión de lleno de un tanque descubierto
 PATCH {{api}}/v1/homes/home_01/tanks/{{tankId}}
 Authorization: Bearer {{userToken}}
 Content-Type: application/json
 
 {
-  "name": "Tanque del patio"
+  "name": "Tanque del patio",
+  "heightCm": 200,
+  "diameterCm": 51,
+  "fullPressureKpa": 19.6
 }
 
 ### Evento de arranque

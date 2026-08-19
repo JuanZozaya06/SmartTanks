@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from math import isfinite, pi
 from typing import Any
 
 from flask import Flask, jsonify, request
@@ -68,6 +69,59 @@ def _tank_document_id(device_id: str, sensor_id: str) -> str:
     return f"{device_id}:{sensor_id}"
 
 
+def _number(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = float(value)
+    return number if isfinite(number) else None
+
+
+def _tank_dimensions(data: dict[str, Any]) -> tuple[float, float] | None:
+    height_cm = _number(data.get("heightCm"))
+    diameter_cm = _number(data.get("diameterCm"))
+    if not height_cm or not diameter_cm:
+        return None
+    return height_cm, diameter_cm
+
+
+def _tank_calibration(data: dict[str, Any]) -> tuple[float, float, float] | None:
+    dimensions = _tank_dimensions(data)
+    full_pressure_kpa = _number(data.get("fullPressureKpa"))
+    if dimensions is None or not full_pressure_kpa:
+        return None
+    return *dimensions, full_pressure_kpa
+
+
+def _capacity_liters(height_cm: float, diameter_cm: float) -> float:
+    return round(pi * (diameter_cm / 2) ** 2 * height_cm / 1000, 2)
+
+
+def _derive_reading(
+    reading: dict[str, Any],
+    tank_data: dict[str, Any],
+) -> dict[str, Any]:
+    derived = dict(reading)
+    for field in ("percentage", "waterHeightCm", "liters"):
+        derived.pop(field, None)
+
+    calibration = _tank_calibration(tank_data)
+    pressure_kpa = _number(derived.get("pressureKpa"))
+    if calibration is None or pressure_kpa is None:
+        return derived
+
+    height_cm, diameter_cm, full_pressure_kpa = calibration
+    percentage = min(max(pressure_kpa / full_pressure_kpa * 100, 0), 100)
+    capacity_liters = _capacity_liters(height_cm, diameter_cm)
+    derived.update(
+        {
+            "percentage": round(percentage, 2),
+            "waterHeightCm": round(height_cm * percentage / 100, 2),
+            "liters": round(capacity_liters * percentage / 100, 2),
+        }
+    )
+    return derived
+
+
 def _tank_response(tank_id: str, data: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": tank_id,
@@ -77,6 +131,7 @@ def _tank_response(tank_id: str, data: dict[str, Any]) -> dict[str, Any]:
         "shape": data.get("shape"),
         "heightCm": data.get("heightCm"),
         "diameterCm": data.get("diameterCm"),
+        "fullPressureKpa": data.get("fullPressureKpa"),
         "capacityLiters": data.get("capacityLiters"),
         "lowLevelPercentage": data.get("lowLevelPercentage", 25),
         "configurationStatus": data.get("configurationStatus", "pending"),
@@ -278,19 +333,43 @@ def update_tank(home_id: str, tank_id: str):
         return _json_error("El tanque no fue descubierto desde un sensor válido.", 409)
 
     updated_at = datetime.now(UTC)
-    update = {"name": payload.name, "updatedAt": updated_at}
+    requested = payload.model_dump(by_alias=True, exclude_none=True)
+    configured_tank = {**tank_data, **requested}
+    dimensions = _tank_dimensions(configured_tank)
+    calibration = _tank_calibration(configured_tank)
+    update = {**requested, "updatedAt": updated_at}
+    if dimensions is not None:
+        height_cm, diameter_cm = dimensions
+        update.update(
+            {
+                "shape": "cylinder",
+                "capacityLiters": _capacity_liters(height_cm, diameter_cm),
+            }
+        )
+    update["configurationStatus"] = (
+        "configured" if calibration is not None else "pending"
+    )
+
+    latest_reading = tank_data.get("latestReading")
+    if isinstance(latest_reading, dict):
+        update["latestReading"] = _derive_reading(
+            latest_reading,
+            {**configured_tank, **update},
+        )
+
     audit_ref = db.collection("auditLogs").document()
     write_batch = db.batch()
     write_batch.set(tank_ref, update, merge=True)
     write_batch.create(
         audit_ref,
         {
-            "action": "tank_renamed",
+            "action": "tank_updated",
             "tankId": tank_id,
             "deviceId": tank_data.get("deviceId"),
             "sensorId": tank_data.get("sensorId"),
             "homeId": home_id,
             "actorUserId": user_id,
+            "changedFields": sorted(requested),
             "createdAt": updated_at,
         },
     )
@@ -396,8 +475,8 @@ def ingest_readings():
         for sensor_id in {item.sensor_id for item in payload.readings}
     }
     existing_ids = {snapshot.id for snapshot in db.get_all(refs) if snapshot.exists}
-    existing_tank_ids = {
-        snapshot.id
+    existing_tanks = {
+        snapshot.id: snapshot.to_dict() or {}
         for snapshot in db.get_all(list(tank_refs_by_sensor.values()))
         if snapshot.exists
     }
@@ -414,7 +493,10 @@ def ingest_readings():
             continue
 
         tank_id = _tank_document_id(identity.device_id, item.sensor_id)
-        document = item.model_dump(by_alias=True)
+        document = _derive_reading(
+            item.model_dump(by_alias=True),
+            existing_tanks.get(tank_id, {}),
+        )
         document.update(
             {
                 "deviceId": identity.device_id,
@@ -439,7 +521,7 @@ def ingest_readings():
             "status": "active",
             "updatedAt": received_at,
         }
-        if tank_id not in existing_tank_ids:
+        if tank_id not in existing_tanks:
             tank_document.update(
                 {
                     "homeId": home_id,

@@ -14,6 +14,9 @@ export interface RealtimeTankState {
   liters: number | null;
   waterHeightCm: number | null;
   pressureKpa: number | null;
+  heightCm: number | null;
+  diameterCm: number | null;
+  fullPressureKpa: number | null;
   capacityLiters: number | null;
   lowLevelPercentage: number;
   updatedAt: Date;
@@ -72,6 +75,9 @@ export function mapTankState(tankId: string, data: DocumentData): RealtimeTankSt
     liters: numericValue(latestReading['liters']),
     waterHeightCm: numericValue(latestReading['waterHeightCm']),
     pressureKpa: numericValue(latestReading['pressureKpa']),
+    heightCm: numericValue(data['heightCm']),
+    diameterCm: numericValue(data['diameterCm']),
+    fullPressureKpa: numericValue(data['fullPressureKpa']),
     capacityLiters: numericValue(data['capacityLiters']),
     lowLevelPercentage: numericValue(data['lowLevelPercentage']) ?? 25,
     updatedAt: dateValue(latestReading['receivedAt'] ?? data['lastCommunicationAt']),

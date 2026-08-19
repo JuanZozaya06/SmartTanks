@@ -79,7 +79,10 @@ Reglas que deben preservarse:
 - Una casa puede tener miembros con roles `owner`, `admin` o `viewer`.
 - Cada ESP32 conserva un único `deviceId`. Cada sensor utiliza un `sensorId` lógico, estable entre reinicios; no otorgar credenciales de dispositivo separadas a sensores analógicos.
 - `POST /v1/homes` crea la casa sin tanques. La primera lectura autenticada de cada combinación `deviceId + sensorId` descubre y crea el tanque correspondiente bajo `homes/{homeId}/tanks/{deviceId}:{sensorId}`.
-- Un tanque descubierto comienza con `configurationStatus: pending` y nombre referencial; el usuario puede renombrarlo mediante la API. No mostrar documentos antiguos o incompletos que carezcan de `deviceId`, `sensorId` o `latestReading`.
+- Un tanque descubierto comienza con `configurationStatus: pending` y nombre referencial. `owner` o `admin` configura mediante la API su nombre, altura interna, diámetro interno y presión medida al estar lleno. No mostrar documentos antiguos o incompletos que carezcan de `deviceId`, `sensorId` o `latestReading`.
+- La geometría inicial soportada es cilíndrica. La API calcula `capacityLiters = π × (diameterCm / 2)² × heightCm / 1000` y, mientras no exista una calibración de vacío independiente, asume `0 kPa = 0 %` y `fullPressureKpa = 100 %`.
+- La API es la fuente de verdad de `percentage`, `waterHeightCm` y `liters`: descarta esos valores si llegan desde el dispositivo y los deriva de la presión y configuración del tanque. Sin configuración completa conserva la presión, pero no publica valores derivados.
+- El panel permite capturar la última presión real como `fullPressureKpa`; esta acción debe hacerse con el tanque físicamente lleno. Una actualización de configuración recalcula inmediatamente `latestReading`, sin reescribir en masa el histórico existente.
 - Las lecturas son idempotentes. El ID incluye `deviceId`, `sequence` y `sensorId`; un reintento devuelve `duplicate` y cuenta como confirmado sin sobrescribir el original.
 - La API actualiza `homes/{homeId}/tanks/{tankId}.latestReading` en el mismo batch que crea el histórico. Angular escucha la colección de tanques con `onSnapshot()`; no debe hacer polling del estado actual.
 - Distinguir siempre `observedAt` (momento medido) de `receivedAt` (momento recibido por el servidor).
@@ -223,7 +226,7 @@ Dos tanques cada 30 segundos generan hasta 5.760 documentos históricos y 5.760 
 
 No inventar valores para estos puntos; usar una configuración clara o solicitar la decisión cuando bloquee el trabajo:
 
-- Dimensiones internas, capacidad y calibración vacío/lleno de ambos tanques.
+- Valores reales de dimensiones internas y presión de lleno que el usuario debe medir y guardar para cada tanque.
 - Intervalo definitivo de 30 o 60 segundos.
 - Mecanismo operativo para precargar unidades y para rotar o transferir el secreto del ESP32.
 - Aprobar o descartar el auto-registro del ESP32 y, si se aprueba, definir una credencial segura de bootstrap.

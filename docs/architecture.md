@@ -29,6 +29,17 @@ El identificador de lectura incluye `sensorId` porque un mismo ciclo/`sequence` 
 
 `POST /v1/homes` no crea tanques. La primera lectura autenticada de cada combinación `deviceId + sensorId` crea `homes/{homeId}/tanks/{deviceId}:{sensorId}` con `configurationStatus: pending`, nombre referencial y `latestReading`. La API crea el histórico y actualiza el tanque dentro del mismo batch. Angular escucha la colección completa con `onSnapshot()`, por lo que descubre sensores nuevos sin recargar ni hacer polling.
 
+Cada tanque cilíndrico se configura desde el panel con `heightCm`, `diameterCm` y `fullPressureKpa`. La capacidad y los valores derivados se calculan en la API:
+
+```text
+capacityLiters = π × (diameterCm / 2)² × heightCm / 1000
+percentage = clamp(pressureKpa / fullPressureKpa × 100, 0, 100)
+waterHeightCm = heightCm × percentage / 100
+liters = capacityLiters × percentage / 100
+```
+
+La primera versión asume `0 kPa = tanque vacío`. Para establecer el punto de 100 %, el usuario llena físicamente el tanque y captura desde Angular su presión actual. El dispositivo solo aporta la presión cruda; la API elimina cualquier porcentaje, altura o litraje enviado por él y los vuelve a calcular. Hasta completar la configuración, se conserva y muestra la presión, pero los valores derivados permanecen ausentes. Cambiar la configuración recalcula `latestReading`; no reescribe los documentos históricos anteriores.
+
 ```text
 API crea readings/{id} ─┐
                         ├─ batch atómico ─► homes/{homeId}/tanks/{tankId}.latestReading
@@ -70,6 +81,7 @@ POST /v1/device/readings/batch
         ├─ validar deviceId + secreto
         ├─ validar sensorId estable
         ├─ detectar documentos ya existentes
+        ├─ derivar porcentaje y litros si el tanque está configurado
         └─ crear lectura y descubrir tanque si es necesario
                     │
                     ▼
@@ -102,7 +114,7 @@ POST devices/claim ─► homeId + label + status active
 - El `deviceId` tiene el formato `smarttank-<12 hex>` y se deriva de la eFuse/MAC de fábrica del ESP32. Es público; el secreto es la credencial.
 - Se usa la MAC completa, no solo los últimos ocho hexadecimales, para reducir colisiones.
 - El claim no crea tanques ni asigna canales. Los tanques aparecen solo después de mediciones reales.
-- El usuario puede cambiar el nombre de un tanque descubierto con `PATCH /v1/homes/{homeId}/tanks/{tankId}`; la identidad técnica `deviceId + sensorId` no cambia.
+- El usuario con rol `owner` o `admin` puede cambiar nombre, altura, diámetro y presión de lleno con `PATCH /v1/homes/{homeId}/tanks/{tankId}`; la identidad técnica `deviceId + sensorId` no cambia.
 - El auto-registro en el primer arranque no está aprobado. Si se implementa, debe autenticar el alta mediante una credencial de bootstrap y, cuando el registro ya exista, verificar el secreto individual en vez de ignorar ciegamente la solicitud.
 
 ## Tiempo y cortes
@@ -131,7 +143,7 @@ Cloud Functions requiere Blaze y una cuenta de facturación. Deben configurarse 
 
 ## Decisiones de producto aún abiertas
 
-- Medidas internas y capacidad real de cada tanque.
+- Valores reales de altura, diámetro y presión de lleno de cada tanque; el mecanismo para guardarlos ya está definido en el panel y la API.
 - Intervalo definitivo de 30 o 60 segundos.
 - Herramienta de aprovisionamiento, posible bootstrap y rotación del secreto del ESP32.
 - Si el panel final usa Angular puro o Ionic Angular para empaquetado móvil.

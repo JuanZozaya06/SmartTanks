@@ -79,3 +79,21 @@ def test_device_claim_requires_efuse_based_device_id() -> None:
 def test_tank_name_cannot_be_blank() -> None:
     with pytest.raises(ValidationError):
         TankUpdate.model_validate({"name": "   "})
+
+
+def test_tank_update_accepts_dimensions_and_full_pressure() -> None:
+    update = TankUpdate.model_validate(
+        {"heightCm": 200, "diameterCm": 51, "fullPressureKpa": 19.6}
+    )
+
+    assert update.height_cm == 200
+    assert update.diameter_cm == 51
+    assert update.full_pressure_kpa == 19.6
+
+
+def test_tank_update_requires_at_least_one_change() -> None:
+    with pytest.raises(ValidationError):
+        TankUpdate.model_validate({})
+
+    with pytest.raises(ValidationError):
+        TankUpdate.model_validate({"name": None})

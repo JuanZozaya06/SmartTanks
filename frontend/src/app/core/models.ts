@@ -20,10 +20,18 @@ export interface TankConfiguration {
   shape: 'cylinder' | null;
   heightCm: number | null;
   diameterCm: number | null;
+  fullPressureKpa: number | null;
   capacityLiters: number | null;
   lowLevelPercentage: number;
   configurationStatus: 'pending' | 'configured';
   status: 'active' | 'inactive';
+}
+
+export interface TankUpdateRequest {
+  name?: string;
+  heightCm?: number;
+  diameterCm?: number;
+  fullPressureKpa?: number;
 }
 
 export interface AppContext {

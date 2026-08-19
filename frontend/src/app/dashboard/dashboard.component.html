@@ -63,7 +63,7 @@
         <div class="tank-card__heading">
           <div>
             <p class="label">
-              @if (tank.state === 'unknown') { Lectura recibida · pendiente de calibración }
+              @if (tank.configurationStatus === 'pending') { Configura medidas y presión de lleno }
               @else if (tank.state === 'low') { Nivel bajo }
               @else { Nivel estable }
             </p>
@@ -92,26 +92,98 @@
             <dt>Disponible</dt>
             <dd>{{ tank.liters === null ? '—' : tank.liters + ' L' }}</dd>
           </div>
+          <div>
+            <dt>Capacidad</dt>
+            <dd>{{ tank.capacityLiters === null ? '—' : tank.capacityLiters + ' L' }}</dd>
+          </div>
         </dl>
 
         @if (editingTankId() === tank.tankId) {
-          <div class="tank-rename">
-            <input
-              [value]="tankNameDraft()"
-              (input)="tankNameDraft.set($any($event.target).value)"
-              maxlength="80"
-              aria-label="Nuevo nombre del tanque"
-            />
-            <button class="add-device" type="button" (click)="saveTankName(tank)" [disabled]="savingTankId() === tank.tankId">
-              Guardar
-            </button>
-            <button type="button" class="logout" (click)="cancelRename()">Cancelar</button>
+          <div class="tank-configuration">
+            <div class="tank-configuration__fields">
+              <label>
+                Nombre
+                <input
+                  [value]="tankNameDraft()"
+                  (input)="tankNameDraft.set($any($event.target).value)"
+                  maxlength="80"
+                />
+              </label>
+              <label>
+                Altura total (cm)
+                <input
+                  type="number"
+                  min="0.1"
+                  max="1000"
+                  step="0.1"
+                  [value]="tankHeightDraft()"
+                  (input)="tankHeightDraft.set($any($event.target).value)"
+                />
+              </label>
+              <label>
+                Diámetro interno (cm)
+                <input
+                  type="number"
+                  min="0.1"
+                  max="1000"
+                  step="0.1"
+                  [value]="tankDiameterDraft()"
+                  (input)="tankDiameterDraft.set($any($event.target).value)"
+                />
+              </label>
+              <label>
+                Presión con el tanque lleno (kPa)
+                <input
+                  type="number"
+                  min="0.001"
+                  max="100"
+                  step="0.001"
+                  [value]="tankFullPressureDraft()"
+                  (input)="tankFullPressureDraft.set($any($event.target).value)"
+                />
+              </label>
+            </div>
+
+            <div class="calibration-help">
+              <p>
+                Llena físicamente este tanque y guarda su presión actual como el punto de 100 %.
+                Por ahora, 0 kPa representa el tanque vacío.
+              </p>
+              <button
+                class="logout"
+                type="button"
+                (click)="useCurrentPressureAsFull(tank)"
+                [disabled]="tank.pressureKpa === null"
+              >
+                Usar presión actual{{ tank.pressureKpa === null ? '' : ' (' + tank.pressureKpa + ' kPa)' }}
+              </button>
+              <strong>
+                Capacidad cilíndrica calculada:
+                {{ capacityPreview() === null ? '—' : capacityPreview() + ' L' }}
+              </strong>
+            </div>
+
+            <div class="tank-configuration__actions">
+              <button
+                class="add-device"
+                type="button"
+                (click)="saveTankConfiguration(tank)"
+                [disabled]="savingTankId() === tank.tankId"
+              >
+                {{ savingTankId() === tank.tankId ? 'Guardando…' : 'Guardar configuración' }}
+              </button>
+              <button type="button" class="logout" (click)="cancelTankConfiguration()">
+                Cancelar
+              </button>
+            </div>
           </div>
-          @if (tankRenameError()) {
-            <p class="form-error" role="alert">{{ tankRenameError() }}</p>
+          @if (tankConfigurationError()) {
+            <p class="form-error" role="alert">{{ tankConfigurationError() }}</p>
           }
-        } @else {
-          <button class="logout" type="button" (click)="startRename(tank)">Cambiar nombre</button>
+        } @else if (canManageTanks()) {
+          <button class="logout" type="button" (click)="startTankConfiguration(tank)">
+            {{ tank.configurationStatus === 'configured' ? 'Editar configuración' : 'Configurar tanque' }}
+          </button>
         }
 
         <p class="updated">Actualizado {{ tank.updatedAt | date:'HH:mm:ss' }}</p>

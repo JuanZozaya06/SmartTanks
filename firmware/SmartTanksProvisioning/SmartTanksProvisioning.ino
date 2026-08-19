@@ -25,6 +25,8 @@ constexpr uint32_t READING_INTERVAL_MS = 30'000;
 constexpr uint32_t SYNC_INTERVAL_MS = 8'000;
 constexpr uint16_t MAX_QUEUED_BATCHES = 120;
 constexpr char API_BASE_URL[] = "https://us-east1-smarttanks-830ba.cloudfunctions.net/api";
+constexpr char SENSOR_ID_A[] = "pressure-a";
+constexpr char SENSOR_ID_B[] = "pressure-b";
 constexpr char PREF_SEQUENCE[] = "sequence";
 constexpr char QUEUE_PATH[] = "/readings.csv";
 constexpr char QUEUE_TEMP_PATH[] = "/readings.tmp";
@@ -244,6 +246,30 @@ uint16_t queuedBatchCount() {
   return count;
 }
 
+void discardLegacyQueueIfPresent() {
+  File queue = LittleFS.open(QUEUE_PATH, FILE_READ);
+  if (!queue || !queue.available()) {
+    if (queue) queue.close();
+    return;
+  }
+
+  String firstLine = queue.readStringUntil('\n');
+  queue.close();
+  firstLine.trim();
+  if (firstLine.startsWith("v2,")) return;
+
+  const uint16_t discardedBatches = queuedBatchCount();
+  LittleFS.remove(QUEUE_TEMP_PATH);
+  if (LittleFS.remove(QUEUE_PATH)) {
+    Serial.printf(
+      "Migración: se eliminaron %u lotes mock del formato anterior.\n",
+      discardedBatches
+    );
+  } else {
+    Serial.println("ERROR: no se pudo eliminar la cola del formato anterior.");
+  }
+}
+
 void appendMockBatch() {
   // Conservamos los datos más antiguos hasta recibir confirmación del API.
   // Si la cola llega al límite, se descarta esta nueva muestra, no una pendiente.
@@ -261,7 +287,14 @@ void appendMockBatch() {
     Serial.println("ERROR: no se pudo abrir la cola local.");
     return;
   }
-  queue.printf("%lu,%lu,%.2f,%.2f\n", sequence, millis(), tankA, tankB);
+  queue.printf(
+    "v2,%lu,%lu,%s,%.2f,%.2f\n",
+    sequence,
+    millis(),
+    bootSessionId.c_str(),
+    tankA,
+    tankB
+  );
   queue.close();
   Serial.printf("Mock guardado: secuencia %lu | A %.1f%% | B %.1f%%\n", sequence, tankA, tankB);
 }
@@ -282,7 +315,79 @@ bool popFirstQueuedBatch() {
   return LittleFS.rename(QUEUE_TEMP_PATH, QUEUE_PATH);
 }
 
-String makeReadingsPayload(uint32_t sequence, uint32_t elapsedMs, float tankA, float tankB) {
+bool parseQueuedBatch(
+  const String& line,
+  unsigned long& sequence,
+  unsigned long& elapsedMs,
+  String& readingBootSessionId,
+  float& tankA,
+  float& tankB
+) {
+  char parsedBootSessionId[80] = {};
+  if (sscanf(
+        line.c_str(),
+        "v2,%lu,%lu,%79[^,],%f,%f",
+        &sequence,
+        &elapsedMs,
+        parsedBootSessionId,
+        &tankA,
+        &tankB
+      ) == 5) {
+    readingBootSessionId = parsedBootSessionId;
+    return true;
+  }
+
+  // Compatibilidad con las filas creadas por el firmware anterior. Esas filas
+  // no conservaban su sesión de arranque, por lo que usan la sesión actual.
+  if (sscanf(line.c_str(), "%lu,%lu,%f,%f", &sequence, &elapsedMs, &tankA, &tankB) == 4) {
+    readingBootSessionId = bootSessionId;
+    return true;
+  }
+
+  return false;
+}
+
+bool responseConfirmsSensor(const String& response, uint32_t sequence, const char* sensorId) {
+  const String sensorToken = String("\"sensorId\":\"") + sensorId + "\"";
+  int sensorPosition = response.indexOf(sensorToken);
+
+  while (sensorPosition >= 0) {
+    const int objectStart = response.lastIndexOf('{', sensorPosition);
+    const int objectEnd = response.indexOf('}', sensorPosition);
+    if (objectStart >= 0 && objectEnd > objectStart) {
+      const String acceptedItem = response.substring(objectStart, objectEnd + 1);
+      const String sequenceToken = "\"sequence\":";
+      const int sequencePosition = acceptedItem.indexOf(sequenceToken);
+      const bool statusConfirmed =
+        acceptedItem.indexOf("\"status\":\"created\"") >= 0 ||
+        acceptedItem.indexOf("\"status\":\"duplicate\"") >= 0;
+
+      if (sequencePosition >= 0) {
+        const unsigned long confirmedSequence = acceptedItem
+          .substring(sequencePosition + sequenceToken.length())
+          .toInt();
+        if (confirmedSequence == sequence && statusConfirmed) return true;
+      }
+    }
+
+    sensorPosition = response.indexOf(sensorToken, sensorPosition + sensorToken.length());
+  }
+
+  return false;
+}
+
+bool responseConfirmsBatch(const String& response, uint32_t sequence) {
+  return responseConfirmsSensor(response, sequence, SENSOR_ID_A) &&
+         responseConfirmsSensor(response, sequence, SENSOR_ID_B);
+}
+
+String makeReadingsPayload(
+  uint32_t sequence,
+  uint32_t elapsedMs,
+  const String& readingBootSessionId,
+  float tankA,
+  float tankB
+) {
   const float heightA = tankA * 2.0f;  // prototipo: tanque de 200 cm
   const float heightB = tankB * 2.0f;
   const float litersA = 408.6f * tankA / 100.0f;
@@ -292,10 +397,11 @@ String makeReadingsPayload(uint32_t sequence, uint32_t elapsedMs, float tankA, f
   char payload[850];
   snprintf(payload, sizeof(payload),
     "{\"deviceId\":\"%s\",\"bootSessionId\":\"%s\",\"readings\":["
-    "{\"sequence\":%lu,\"tankChannel\":\"A\",\"timestampQuality\":\"pending\",\"elapsedMs\":%lu,\"pressureKpa\":%.3f,\"waterHeightCm\":%.2f,\"percentage\":%.2f,\"liters\":%.2f,\"wifiRssi\":%d},"
-    "{\"sequence\":%lu,\"tankChannel\":\"B\",\"timestampQuality\":\"pending\",\"elapsedMs\":%lu,\"pressureKpa\":%.3f,\"waterHeightCm\":%.2f,\"percentage\":%.2f,\"liters\":%.2f,\"wifiRssi\":%d}]}",
-    stableDeviceId.c_str(), bootSessionId.c_str(), sequence, elapsedMs, pressureA, heightA, tankA, litersA, WiFi.RSSI(),
-    sequence, elapsedMs, pressureB, heightB, tankB, litersB, WiFi.RSSI());
+    "{\"sequence\":%lu,\"sensorId\":\"%s\",\"timestampQuality\":\"pending\",\"elapsedMs\":%lu,\"pressureKpa\":%.3f,\"waterHeightCm\":%.2f,\"percentage\":%.2f,\"liters\":%.2f,\"wifiRssi\":%d},"
+    "{\"sequence\":%lu,\"sensorId\":\"%s\",\"timestampQuality\":\"pending\",\"elapsedMs\":%lu,\"pressureKpa\":%.3f,\"waterHeightCm\":%.2f,\"percentage\":%.2f,\"liters\":%.2f,\"wifiRssi\":%d}]}",
+    stableDeviceId.c_str(), readingBootSessionId.c_str(),
+    sequence, SENSOR_ID_A, elapsedMs, pressureA, heightA, tankA, litersA, WiFi.RSSI(),
+    sequence, SENSOR_ID_B, elapsedMs, pressureB, heightB, tankB, litersB, WiFi.RSSI());
   return String(payload);
 }
 
@@ -314,9 +420,10 @@ void syncFirstQueuedBatch() {
   queue.close();
   unsigned long sequence = 0;
   unsigned long elapsedMs = 0;
+  String readingBootSessionId;
   float tankA = 0;
   float tankB = 0;
-  if (sscanf(line.c_str(), "%lu,%lu,%f,%f", &sequence, &elapsedMs, &tankA, &tankB) != 4) {
+  if (!parseQueuedBatch(line, sequence, elapsedMs, readingBootSessionId, tankA, tankB)) {
     Serial.println("ERROR: entrada inválida en la cola; se conserva.");
     return;
   }
@@ -331,13 +438,28 @@ void syncFirstQueuedBatch() {
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-Device-Id", stableDeviceId);
   http.addHeader("Authorization", String("Bearer ") + SMARTTANKS_DEVICE_SECRET);
-  const int statusCode = http.POST(makeReadingsPayload(sequence, elapsedMs, tankA, tankB));
+  const int statusCode = http.POST(
+    makeReadingsPayload(sequence, elapsedMs, readingBootSessionId, tankA, tankB)
+  );
   const String response = http.getString();
   http.end();
   Serial.printf("API: HTTP %d\n", statusCode);
   if (!response.isEmpty()) Serial.println(response);
-  if (statusCode == 202 && popFirstQueuedBatch()) {
-    Serial.printf("API confirmó la secuencia %lu; eliminada de la cola.\n", sequence);
+  if (statusCode == 202) {
+    if (!responseConfirmsBatch(response, sequence)) {
+      Serial.printf(
+        "API: la respuesta no confirmó %lu para %s y %s; la cola se conserva.\n",
+        sequence,
+        SENSOR_ID_A,
+        SENSOR_ID_B
+      );
+      return;
+    }
+    if (popFirstQueuedBatch()) {
+      Serial.printf("API confirmó la secuencia %lu para ambos sensores; eliminada de la cola.\n", sequence);
+    } else {
+      Serial.println("ERROR: el API confirmó la lectura, pero no se pudo actualizar la cola.");
+    }
   }
 }
 
@@ -351,7 +473,11 @@ void setup() {
   preferences.begin(PREF_NAMESPACE, false);
   savedSsid = preferences.getString(PREF_WIFI_SSID, "");
   savedPassword = preferences.getString(PREF_WIFI_PASSWORD, "");
-  if (!LittleFS.begin(true)) Serial.println("ERROR: LittleFS no pudo iniciar.");
+  if (!LittleFS.begin(true)) {
+    Serial.println("ERROR: LittleFS no pudo iniciar.");
+  } else {
+    discardLegacyQueueIfPresent();
+  }
 
   WiFi.mode(WIFI_AP_STA);
   WiFi.setAutoReconnect(true);

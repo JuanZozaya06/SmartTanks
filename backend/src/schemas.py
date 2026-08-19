@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ApiModel(BaseModel):
@@ -69,12 +69,36 @@ class DeviceClaim(ApiModel):
 
 
 class TankUpdate(ApiModel):
-    name: str = Field(min_length=1, max_length=80)
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    height_cm: float | None = Field(default=None, alias="heightCm", gt=0, le=1000)
+    diameter_cm: float | None = Field(default=None, alias="diameterCm", gt=0, le=1000)
+    full_pressure_kpa: float | None = Field(
+        default=None,
+        alias="fullPressureKpa",
+        gt=0,
+        le=100,
+    )
 
     @field_validator("name")
     @classmethod
-    def require_visible_name(cls, value: str) -> str:
+    def require_visible_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         stripped = value.strip()
         if not stripped:
             raise ValueError("name no puede estar vacío")
         return stripped
+
+    @model_validator(mode="after")
+    def require_a_change(self) -> Self:
+        if not any(
+            value is not None
+            for value in (
+                self.name,
+                self.height_cm,
+                self.diameter_cm,
+                self.full_pressure_kpa,
+            )
+        ):
+            raise ValueError("Debes indicar al menos un cambio para el tanque")
+        return self

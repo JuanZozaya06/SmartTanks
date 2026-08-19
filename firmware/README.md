@@ -13,7 +13,13 @@ Sketch Arduino para la instalación inicial y la primera prueba de telemetría.
 - Intenta reconectarse a la red guardada después de cada reinicio.
 - Mantiene AP y cliente Wi-Fi activos simultáneamente durante el desarrollo.
 - Genera dos lecturas mock cada 30 segundos, las conserva en una cola LittleFS
-  hasta recibir HTTP 202 y las envía al API HTTPS real.
+  y las envía al API HTTPS real con los `sensorId` estables `pressure-a` y
+  `pressure-b`.
+- Borra una fila de la cola únicamente cuando HTTP 202 confirma la misma
+  `sequence` para ambos sensores como `created` o `duplicate`.
+- Las filas nuevas conservan su `bootSessionId`. En el primer arranque, el
+  firmware elimina únicamente la cola mock del formato anterior para no enviar
+  telemetría simulada obsoleta; no borra Wi-Fi, secreto ni secuencia persistida.
 
 ## ID, PIN y secreto del dispositivo
 
@@ -36,8 +42,9 @@ El firmware recibe únicamente el secreto individual, mediante:
 Ese archivo no entra a Git. El firmware **no conoce ni envía el PIN** y nunca
 llama al endpoint de claim. Mientras el cliente no complete el claim desde la
 web, el API responderá 401/403 a las lecturas porque el dispositivo sigue sin
-`homeId` y canales A/B; la cola no se borra. Tras el claim, las mismas lecturas
-pendientes se sincronizan normalmente.
+`homeId`; la cola no se borra. Tras el claim, el API descubre un tanque para
+`pressure-a` y otro para `pressure-b`, y las lecturas pendientes se sincronizan
+normalmente.
 
 ## Cargarlo
 

@@ -174,7 +174,52 @@ def test_reading_batch_updates_history_and_latest_tank_state(monkeypatch) -> Non
     tank_1_state = database.write_batch.sets[0][1]
     assert database.write_batch.sets[0][2] is True
     assert tank_1_state["latestReading"]["sequence"] == 42
-    assert tank_1_state["latestReading"]["liters"] == 276
+    assert "percentage" not in tank_1_state["latestReading"]
+    assert "liters" not in tank_1_state["latestReading"]
+
+
+def test_reading_uses_the_saved_tank_calibration(monkeypatch) -> None:
+    tank_path = "homes/home_01/tanks/dev_01:pressure-a"
+    database = FakeFirestore(
+        {
+            tank_path: {
+                "deviceId": "dev_01",
+                "sensorId": "pressure-a",
+                "heightCm": 200,
+                "diameterCm": 100,
+                "fullPressureKpa": 19.6133,
+                "configurationStatus": "configured",
+            }
+        }
+    )
+    identity = DeviceIdentity(device_id="dev_01", data={"homeId": "home_01"})
+    monkeypatch.setattr("src.http_app.get_firestore_client", lambda: database)
+    monkeypatch.setattr("src.http_app.require_device", lambda request, db: identity)
+
+    response = app.test_client().post(
+        "/v1/device/readings/batch",
+        json={
+            "deviceId": "dev_01",
+            "readings": [
+                {
+                    "sequence": 44,
+                    "sensorId": "pressure-a",
+                    "timestampQuality": "pending",
+                    "pressureKpa": 9.80665,
+                    "percentage": 1,
+                    "waterHeightCm": 1,
+                    "liters": 1,
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 202
+    historical = database.write_batch.creates[0][1]
+    assert historical["percentage"] == 50
+    assert historical["waterHeightCm"] == 100
+    assert historical["liters"] == 785.4
+    assert database.write_batch.sets[0][1]["latestReading"] == historical
 
 
 def test_reading_keeps_the_custom_name_of_an_existing_sensor(monkeypatch) -> None:
@@ -314,7 +359,51 @@ def test_owner_can_rename_a_discovered_tank(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.get_json()["tank"]["name"] == "Tanque del patio"
     assert database.write_batch.sets[0][1]["name"] == "Tanque del patio"
-    assert database.write_batch.creates[0][1]["action"] == "tank_renamed"
+    assert database.write_batch.creates[0][1]["action"] == "tank_updated"
+
+
+def test_owner_can_configure_and_calibrate_a_discovered_tank(monkeypatch) -> None:
+    tank_id = "smarttank-84f703123456:pressure-a"
+    database = FakeFirestore(
+        {
+            "users/user_01": {"activeHomeId": "home_01"},
+            "homes/home_01/members/user_01": {"role": "owner"},
+            f"homes/home_01/tanks/{tank_id}": {
+                "deviceId": "smarttank-84f703123456",
+                "sensorId": "pressure-a",
+                "name": "Tanque pressure-a",
+                "status": "active",
+                "latestReading": {"sequence": 42, "pressureKpa": 9.8},
+            },
+        }
+    )
+    monkeypatch.setattr("src.http_app.get_firestore_client", lambda: database)
+    monkeypatch.setattr("src.http_app.require_user", lambda request: {"uid": "user_01"})
+
+    response = app.test_client().patch(
+        f"/v1/homes/home_01/tanks/{tank_id}",
+        json={
+            "name": "Tanque principal",
+            "heightCm": 200,
+            "diameterCm": 51,
+            "fullPressureKpa": 19.6,
+        },
+    )
+
+    assert response.status_code == 200
+    update = database.write_batch.sets[0][1]
+    assert update["shape"] == "cylinder"
+    assert update["capacityLiters"] == 408.56
+    assert update["configurationStatus"] == "configured"
+    assert update["latestReading"]["percentage"] == 50
+    assert update["latestReading"]["waterHeightCm"] == 100
+    assert update["latestReading"]["liters"] == 204.28
+    assert database.write_batch.creates[0][1]["changedFields"] == [
+        "diameterCm",
+        "fullPressureKpa",
+        "heightCm",
+        "name",
+    ]
 
 
 def test_owner_can_claim_factory_device_without_precreated_tanks(monkeypatch) -> None:

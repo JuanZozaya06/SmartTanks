@@ -32,8 +32,22 @@ export class DashboardComponent implements OnInit {
   readonly showDeviceSetup = signal(false);
   readonly editingTankId = signal<string | null>(null);
   readonly tankNameDraft = signal('');
+  readonly tankHeightDraft = signal('');
+  readonly tankDiameterDraft = signal('');
+  readonly tankFullPressureDraft = signal('');
   readonly savingTankId = signal<string | null>(null);
-  readonly tankRenameError = signal<string | null>(null);
+  readonly tankConfigurationError = signal<string | null>(null);
+  readonly canManageTanks = computed(() =>
+    ['owner', 'admin'].includes(this.context().home?.role ?? ''),
+  );
+  readonly capacityPreview = computed(() => {
+    const heightCm = this.positiveNumber(this.tankHeightDraft());
+    const diameterCm = this.positiveNumber(this.tankDiameterDraft());
+    if (heightCm === null || diameterCm === null) {
+      return null;
+    }
+    return Math.round((Math.PI * (diameterCm / 2) ** 2 * heightCm) / 10) / 100;
+  });
   readonly combinedPercentage = computed(() => {
     const measured = this.tanks().filter((tank) => tank.percentage !== null);
     return measured.length
@@ -71,38 +85,90 @@ export class DashboardComponent implements OnInit {
     this.showDeviceSetup.set(false);
   }
 
-  startRename(tank: TankSummary): void {
+  startTankConfiguration(tank: TankSummary): void {
     this.editingTankId.set(tank.tankId);
     this.tankNameDraft.set(tank.name);
-    this.tankRenameError.set(null);
+    this.tankHeightDraft.set(tank.heightCm?.toString() ?? '');
+    this.tankDiameterDraft.set(tank.diameterCm?.toString() ?? '');
+    this.tankFullPressureDraft.set(tank.fullPressureKpa?.toString() ?? '');
+    this.tankConfigurationError.set(null);
   }
 
-  cancelRename(): void {
+  cancelTankConfiguration(): void {
     this.editingTankId.set(null);
     this.tankNameDraft.set('');
-    this.tankRenameError.set(null);
+    this.tankHeightDraft.set('');
+    this.tankDiameterDraft.set('');
+    this.tankFullPressureDraft.set('');
+    this.tankConfigurationError.set(null);
   }
 
-  async saveTankName(tank: TankSummary): Promise<void> {
+  useCurrentPressureAsFull(tank: TankSummary): void {
+    if (tank.pressureKpa === null || tank.pressureKpa <= 0) {
+      this.tankConfigurationError.set('Todavía no hay una presión válida para calibrar el lleno.');
+      return;
+    }
+    this.tankFullPressureDraft.set(tank.pressureKpa.toString());
+    this.tankConfigurationError.set(null);
+  }
+
+  async saveTankConfiguration(tank: TankSummary): Promise<void> {
     const name = this.tankNameDraft().trim();
     if (!name) {
-      this.tankRenameError.set('Escribe un nombre para el tanque.');
+      this.tankConfigurationError.set('Escribe un nombre para el tanque.');
+      return;
+    }
+    const heightCm = this.positiveNumber(this.tankHeightDraft());
+    const diameterCm = this.positiveNumber(this.tankDiameterDraft());
+    const fullPressureKpa = this.positiveNumber(this.tankFullPressureDraft());
+    if (heightCm === null || diameterCm === null) {
+      this.tankConfigurationError.set('Indica una altura y un diámetro válidos en centímetros.');
+      return;
+    }
+    if (fullPressureKpa === null) {
+      this.tankConfigurationError.set(
+        'Llena el tanque y usa la presión actual, o escribe su presión de lleno.',
+      );
       return;
     }
 
     this.savingTankId.set(tank.tankId);
-    this.tankRenameError.set(null);
+    this.tankConfigurationError.set(null);
     try {
-      await firstValueFrom(this.api.renameTank(this.context().home!.id, tank.tankId, name));
-      this.tanks.update((tanks) =>
-        tanks.map((current) => (current.tankId === tank.tankId ? { ...current, name } : current)),
+      const response = await firstValueFrom(
+        this.api.updateTank(this.context().home!.id, tank.tankId, {
+          name,
+          heightCm,
+          diameterCm,
+          fullPressureKpa,
+        }),
       );
-      this.cancelRename();
+      this.tanks.update((tanks) =>
+        tanks.map((current) =>
+          current.tankId === tank.tankId
+            ? {
+                ...current,
+                name: response.tank.name,
+                heightCm: response.tank.heightCm,
+                diameterCm: response.tank.diameterCm,
+                fullPressureKpa: response.tank.fullPressureKpa,
+                capacityLiters: response.tank.capacityLiters,
+                configurationStatus: response.tank.configurationStatus,
+              }
+            : current,
+        ),
+      );
+      this.cancelTankConfiguration();
     } catch {
-      this.tankRenameError.set('No fue posible guardar el nombre.');
+      this.tankConfigurationError.set('No fue posible guardar la configuración del tanque.');
     } finally {
       this.savingTankId.set(null);
     }
+  }
+
+  private positiveNumber(value: string): number | null {
+    const parsed = Number(value.trim().replace(',', '.'));
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
   }
 
   private async loadDevices(homeId: string): Promise<void> {
