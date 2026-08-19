@@ -57,6 +57,8 @@ La respuesta agrupa las lecturas en intervalos de 5 minutos para día, 30 minuto
 
 Los porcentajes y litros del histórico se recalculan desde `pressureKpa` con la configuración actual del tanque. Esto permite representar mediciones anteriores a la calibración y aplicar correcciones de calibración sin reescribir documentos históricos.
 
+Cuando un lote nuevo llega sin `observedAt` pero conserva `elapsedMs`, la API toma la lectura con mayor tiempo transcurrido como ancla en `receivedAt` y reconstruye las anteriores por diferencia de milisegundos. Esas fechas se guardan exclusivamente como `timestampQuality: estimated`. Para documentos antiguos que todavía tienen `observedAt: null`, la consulta histórica realiza el mismo cálculo por `bootSessionId` sin reescribirlos. `receivedAt` no se presenta como si fuera una hora verificada; el firmware debe sincronizar NTP para producir lecturas `verified`.
+
 La agrupación actual ocurre dentro de la petición y reduce el tamaño de la respuesta, pero todavía lee los documentos crudos de la ventana seleccionada. Antes de aumentar dispositivos o retención se deben incorporar agregados persistentes horarios/diarios para evitar releer un mes completo en cada apertura.
 
 ## Flujo de cuenta y configuración inicial
@@ -133,6 +135,7 @@ POST devices/claim ─► homeId + label + status active
 - `receivedAt`: hora del servidor, siempre presente.
 - `timestampQuality`: `verified`, `estimated` o `pending`.
 - `bootSessionId` + `elapsedMs`: permiten reconstruir tiempo y distinguir reinicios.
+- Si el dispositivo todavía no implementa NTP, la API puede usar `receivedAt` únicamente como ancla para reconstruir por diferencia de `elapsedMs`; el resultado sigue siendo estimado.
 - Los eventos no afirman por sí solos un apagón; una tarea posterior derivará `possible_power_outage` o `possible_internet_outage` a partir de huecos y reinicios.
 
 ## Cuotas y costo esperado

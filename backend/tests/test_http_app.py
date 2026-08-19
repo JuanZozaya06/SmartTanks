@@ -1,6 +1,6 @@
 import os
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 os.environ.setdefault("FIRESTORE_EMULATOR_HOST", "127.0.0.1:8080")
@@ -74,10 +74,11 @@ class FakeCollectionReference:
         return snapshots
 
     def where(self, *, filter):
+        operator = getattr(filter.op_string, "name", filter.op_string)
         return FakeCollectionReference(
             self.database,
             self.path,
-            [*self.filters, (filter.field_path, filter.op_string, filter.value)],
+            [*self.filters, (filter.field_path, operator, filter.value)],
             self.ordering,
         )
 
@@ -91,10 +92,12 @@ class FakeCollectionReference:
 
     @staticmethod
     def _matches(value, operator, expected):
-        if value is None:
-            return False
         if operator == "==":
             return value == expected
+        if operator == "IS_NULL":
+            return value is None
+        if value is None:
+            return False
         if operator == ">=":
             return value >= expected
         if operator == "<=":
@@ -266,6 +269,46 @@ def test_reading_uses_the_saved_tank_calibration(monkeypatch) -> None:
     assert database.write_batch.sets[0][1]["latestReading"] == historical
 
 
+def test_pending_batch_reconstructs_observed_time_from_elapsed_ms(monkeypatch) -> None:
+    database = FakeFirestore()
+    identity = DeviceIdentity(device_id="dev_01", data={"homeId": "home_01"})
+    monkeypatch.setattr("src.http_app.get_firestore_client", lambda: database)
+    monkeypatch.setattr("src.http_app.require_device", lambda request, db: identity)
+
+    response = app.test_client().post(
+        "/v1/device/readings/batch",
+        json={
+            "deviceId": "dev_01",
+            "bootSessionId": "boot_01",
+            "readings": [
+                {
+                    "sequence": 1,
+                    "sensorId": "pressure-a",
+                    "timestampQuality": "pending",
+                    "elapsedMs": 1000,
+                    "pressureKpa": 4.9,
+                },
+                {
+                    "sequence": 2,
+                    "sensorId": "pressure-a",
+                    "timestampQuality": "pending",
+                    "elapsedMs": 31000,
+                    "pressureKpa": 5.1,
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 202
+    received_at = datetime.fromisoformat(response.get_json()["receivedAt"])
+    first = database.write_batch.creates[0][1]
+    second = database.write_batch.creates[1][1]
+    assert first["timestampQuality"] == "estimated"
+    assert second["timestampQuality"] == "estimated"
+    assert first["observedAt"] == received_at - timedelta(seconds=30)
+    assert second["observedAt"] == received_at
+
+
 def test_reading_keeps_the_custom_name_of_an_existing_sensor(monkeypatch) -> None:
     tank_path = "homes/home_01/tanks/dev_01:pressure-a"
     database = FakeFirestore(
@@ -414,6 +457,16 @@ def test_user_can_read_bucketed_tank_history_with_current_calibration(monkeypatc
                 "timestampQuality": "verified",
                 "pressureKpa": 4.9,
             },
+            "readings/reading_pending": {
+                "homeId": "home_01",
+                "tankId": tank_id,
+                "observedAt": None,
+                "receivedAt": datetime(2026, 8, 19, 12, 11, tzinfo=UTC),
+                "elapsedMs": 671000,
+                "bootSessionId": "boot_pending",
+                "timestampQuality": "pending",
+                "pressureKpa": 14.7,
+            },
             "readings/other_tank": {
                 "homeId": "home_01",
                 "tankId": "another-tank",
@@ -438,12 +491,15 @@ def test_user_can_read_bucketed_tank_history_with_current_calibration(monkeypatc
     body = response.get_json()
     assert body["period"] == "custom"
     assert body["bucketSeconds"] == 300
-    assert body["sampleCount"] == 3
-    assert len(body["points"]) == 2
+    assert body["sampleCount"] == 4
+    assert body["reconstructedTimestampCount"] == 1
+    assert len(body["points"]) == 3
     assert body["points"][0]["percentage"] == 75
     assert body["points"][0]["liters"] == 306.42
     assert body["points"][0]["timestampQuality"] == "estimated"
     assert body["points"][1]["percentage"] == 25
+    assert body["points"][2]["percentage"] == 75
+    assert body["points"][2]["timestampQuality"] == "estimated"
 
 
 def test_tank_history_rejects_ranges_longer_than_31_days(monkeypatch) -> None:

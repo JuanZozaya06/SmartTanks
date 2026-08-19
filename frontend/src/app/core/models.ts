@@ -88,5 +88,6 @@ export interface TankHistoryResponse {
   bucketSeconds: number;
   sampleCount: number;
   skippedCount: number;
+  reconstructedTimestampCount: number;
   points: TankHistoryPoint[];
 }

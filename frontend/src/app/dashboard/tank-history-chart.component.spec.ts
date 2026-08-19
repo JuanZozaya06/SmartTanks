@@ -10,6 +10,7 @@ function history(points: TankHistoryResponse['points']): TankHistoryResponse {
     bucketSeconds: 300,
     sampleCount: points.length,
     skippedCount: 0,
+    reconstructedTimestampCount: 0,
     points,
   };
 }

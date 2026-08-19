@@ -89,6 +89,9 @@ Content-Type: application/json
 GET {{api}}/v1/tanks/{{tankId}}/readings?period=day
 Authorization: Bearer {{userToken}}
 
+# La respuesta incluye reconstructedTimestampCount cuando tuvo que reconstruir
+# fechas antiguas desde bootSessionId + elapsedMs. Esos puntos son estimated.
+
 ### Histórico agregado de un rango explícito, máximo 31 días
 GET {{api}}/v1/tanks/{{tankId}}/readings?from=2026-08-18T00:00:00Z&to=2026-08-19T00:00:00Z
 Authorization: Bearer {{userToken}}

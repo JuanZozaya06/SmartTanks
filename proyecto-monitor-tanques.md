@@ -199,6 +199,8 @@ Estrategia acordada:
 4. Enviar esos registros con `timestampQuality: estimated`.
 5. Las lecturas posteriores tienen `timestampQuality: verified`.
 
+Como compatibilidad mientras el firmware todavía no sincronice NTP, la API puede tomar `receivedAt` de la muestra más reciente como ancla y reconstruir hacia atrás usando la diferencia de `elapsedMs`. Ese resultado siempre se marca `estimated`; no convierte la hora del servidor en una medición `verified`.
+
 No se puede medir durante un apagón porque el ESP32 está apagado. El backend puede inferir un posible corte por el hueco entre el último reporte y el siguiente evento de arranque. Esto permite gráficas mensuales de frecuencia y duración estimada de cortes, diferenciando de las pérdidas de Internet con eventos/heartbeats.
 
 ## Arquitectura cloud propuesta

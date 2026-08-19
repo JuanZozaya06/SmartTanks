@@ -88,6 +88,7 @@ Reglas que deben preservarse:
 - Distinguir siempre `observedAt` (momento medido) de `receivedAt` (momento recibido por el servidor).
 - `timestampQuality` solo puede ser `verified`, `estimated` o `pending`.
 - Conservar `bootSessionId` y `elapsedMs` para reconstruir tiempo y analizar reinicios.
+- Como compatibilidad para lotes sin `observedAt`, la API usa la lectura de mayor `elapsedMs` como ancla en `receivedAt`, reconstruye hacia atrás las demás lecturas del lote y guarda el resultado como `estimated`; nunca lo presenta como `verified`. El firmware sigue siendo responsable de sincronizar NTP y enviar la hora real cuando esté disponible.
 - No afirmar que hubo un apagón solo por un hueco. Los eventos derivados deben llamarse `possible_power_outage` o `possible_internet_outage` hasta disponer de evidencia suficiente.
 
 Endpoints de dispositivo vigentes:

@@ -162,6 +162,16 @@ def _history_point(bucket: dict[str, Any], bucket_seconds: int) -> dict[str, Any
     return point
 
 
+def _estimate_observed_at(
+    anchor_at: datetime,
+    anchor_elapsed_ms: int,
+    elapsed_ms: int,
+) -> datetime | None:
+    if elapsed_ms > anchor_elapsed_ms:
+        return None
+    return anchor_at - timedelta(milliseconds=anchor_elapsed_ms - elapsed_ms)
+
+
 def _tank_dimensions(data: dict[str, Any]) -> tuple[float, float] | None:
     height_cm = _number(data.get("heightCm"))
     diameter_cm = _number(data.get("diameterCm"))
@@ -495,7 +505,7 @@ def tank_readings(tank_id: str):
     except ValueError as error:
         return _json_error(str(error), 422)
 
-    query = (
+    observed_query = (
         db.collection("readings")
         .where(filter=FieldFilter("homeId", "==", home_id))
         .where(filter=FieldFilter("tankId", "==", tank_id))
@@ -503,53 +513,91 @@ def tank_readings(tank_id: str):
         .where(filter=FieldFilter("observedAt", "<=", end))
         .order_by("observedAt", direction=BaseQuery.DESCENDING)
     )
+    pending_query = (
+        db.collection("readings")
+        .where(filter=FieldFilter("homeId", "==", home_id))
+        .where(filter=FieldFilter("tankId", "==", tank_id))
+        .where(filter=FieldFilter("observedAt", "==", None))
+        .where(filter=FieldFilter("receivedAt", ">=", start))
+        .where(filter=FieldFilter("receivedAt", "<=", end))
+        .order_by("receivedAt", direction=BaseQuery.DESCENDING)
+    )
     buckets: dict[int, dict[str, Any]] = {}
     sample_count = 0
     skipped_count = 0
-    for snapshot in query.stream():
-        reading = snapshot.to_dict() or {}
-        observed_at = _datetime_value(reading.get("observedAt"))
-        if observed_at is None:
-            skipped_count += 1
-            continue
-        derived = _derive_reading(reading, tank_data)
-        bucket_epoch = int(observed_at.timestamp()) // bucket_seconds * bucket_seconds
-        bucket = buckets.get(bucket_epoch)
-        if bucket is None:
-            bucket = {
-                "bucketEpoch": bucket_epoch,
-                "firstObservedAt": observed_at,
-                "lastObservedAt": observed_at,
-                "sampleCount": 0,
-                "qualities": set(),
-                "pressureKpa": {"count": 0, "sum": 0.0},
-                "percentage": {"count": 0, "sum": 0.0},
-                "liters": {"count": 0, "sum": 0.0},
-            }
-            buckets[bucket_epoch] = bucket
-
-        is_earlier = observed_at < bucket["firstObservedAt"]
-        is_later = observed_at > bucket["lastObservedAt"]
-        bucket["sampleCount"] += 1
-        bucket["qualities"].add(str(derived.get("timestampQuality", "pending")))
-        for field in ("pressureKpa", "percentage", "liters"):
-            value = _number(derived.get(field))
-            if value is None:
+    reconstructed_timestamp_count = 0
+    pending_anchors: dict[str, tuple[datetime, int]] = {}
+    for query, reconstructs_time in (
+        (observed_query, False),
+        (pending_query, True),
+    ):
+        for snapshot in query.stream():
+            reading = snapshot.to_dict() or {}
+            plotted_at = _datetime_value(reading.get("observedAt"))
+            if reconstructs_time:
+                received_at = _datetime_value(reading.get("receivedAt"))
+                elapsed_ms = _number(reading.get("elapsedMs"))
+                boot_session_id = str(reading.get("bootSessionId") or "").strip()
+                if received_at is None or elapsed_ms is None or not boot_session_id:
+                    skipped_count += 1
+                    continue
+                elapsed_ms_int = int(elapsed_ms)
+                anchor = pending_anchors.setdefault(
+                    boot_session_id,
+                    (received_at, elapsed_ms_int),
+                )
+                plotted_at = _estimate_observed_at(
+                    anchor[0],
+                    anchor[1],
+                    elapsed_ms_int,
+                )
+            if plotted_at is None:
+                skipped_count += 1
                 continue
-            values = bucket[field]
-            values["count"] += 1
-            values["sum"] += value
-            values["min"] = min(values.get("min", value), value)
-            values["max"] = max(values.get("max", value), value)
-            if values["count"] == 1 or is_earlier:
-                values["first"] = value
-            if values["count"] == 1 or is_later:
-                values["last"] = value
-        if is_earlier:
-            bucket["firstObservedAt"] = observed_at
-        if is_later:
-            bucket["lastObservedAt"] = observed_at
-        sample_count += 1
+            if plotted_at < start or plotted_at > end:
+                continue
+            derived = _derive_reading(reading, tank_data)
+            if reconstructs_time:
+                derived["timestampQuality"] = "estimated"
+            bucket_epoch = int(plotted_at.timestamp()) // bucket_seconds * bucket_seconds
+            bucket = buckets.get(bucket_epoch)
+            if bucket is None:
+                bucket = {
+                    "bucketEpoch": bucket_epoch,
+                    "firstObservedAt": plotted_at,
+                    "lastObservedAt": plotted_at,
+                    "sampleCount": 0,
+                    "qualities": set(),
+                    "pressureKpa": {"count": 0, "sum": 0.0},
+                    "percentage": {"count": 0, "sum": 0.0},
+                    "liters": {"count": 0, "sum": 0.0},
+                }
+                buckets[bucket_epoch] = bucket
+
+            is_earlier = plotted_at < bucket["firstObservedAt"]
+            is_later = plotted_at > bucket["lastObservedAt"]
+            bucket["sampleCount"] += 1
+            bucket["qualities"].add(str(derived.get("timestampQuality", "pending")))
+            for field in ("pressureKpa", "percentage", "liters"):
+                value = _number(derived.get(field))
+                if value is None:
+                    continue
+                values = bucket[field]
+                values["count"] += 1
+                values["sum"] += value
+                values["min"] = min(values.get("min", value), value)
+                values["max"] = max(values.get("max", value), value)
+                if values["count"] == 1 or is_earlier:
+                    values["first"] = value
+                if values["count"] == 1 or is_later:
+                    values["last"] = value
+            if is_earlier:
+                bucket["firstObservedAt"] = plotted_at
+            if is_later:
+                bucket["lastObservedAt"] = plotted_at
+            sample_count += 1
+            if reconstructs_time:
+                reconstructed_timestamp_count += 1
 
     points = [
         _history_point(buckets[key], bucket_seconds)
@@ -564,6 +612,7 @@ def tank_readings(tank_id: str):
             "bucketSeconds": bucket_seconds,
             "sampleCount": sample_count,
             "skippedCount": skipped_count,
+            "reconstructedTimestampCount": reconstructed_timestamp_count,
             "points": points,
         }
     )
@@ -650,6 +699,10 @@ def ingest_readings():
         return _json_error("El dispositivo no está asignado a una casa.", 409)
 
     received_at = datetime.now(UTC)
+    elapsed_values = [
+        item.elapsed_ms for item in payload.readings if item.elapsed_ms is not None
+    ]
+    anchor_elapsed_ms = max(elapsed_values) if elapsed_values else None
     refs = [
         db.collection("readings").document(
             f"{identity.device_id}:{item.sequence}:{item.sensor_id}"
@@ -684,10 +737,21 @@ def ingest_readings():
             continue
 
         tank_id = _tank_document_id(identity.device_id, item.sensor_id)
-        document = _derive_reading(
-            item.model_dump(by_alias=True),
-            existing_tanks.get(tank_id, {}),
-        )
+        reading_data = item.model_dump(by_alias=True)
+        if (
+            item.observed_at is None
+            and item.elapsed_ms is not None
+            and anchor_elapsed_ms is not None
+        ):
+            estimated_at = _estimate_observed_at(
+                received_at,
+                anchor_elapsed_ms,
+                item.elapsed_ms,
+            )
+            if estimated_at is not None:
+                reading_data["observedAt"] = estimated_at
+                reading_data["timestampQuality"] = "estimated"
+        document = _derive_reading(reading_data, existing_tanks.get(tank_id, {}))
         document.update(
             {
                 "deviceId": identity.device_id,
