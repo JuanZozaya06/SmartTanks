@@ -1,16 +1,17 @@
 import { Component, effect, inject, signal } from '@angular/core';
+import { Router, RouterOutlet } from '@angular/router';
 import { Subscription } from 'rxjs';
 
 import { AuthPanelComponent } from './auth/auth-panel.component';
 import { ApiService } from './core/api.service';
+import { AppSessionService } from './core/app-session.service';
 import { AuthService } from './core/auth.service';
 import { AppContext } from './core/models';
-import { DashboardComponent } from './dashboard/dashboard.component';
 import { HomeSetupComponent } from './onboarding/home-setup.component';
 
 @Component({
   selector: 'app-root',
-  imports: [AuthPanelComponent, DashboardComponent, HomeSetupComponent],
+  imports: [AuthPanelComponent, HomeSetupComponent, RouterOutlet],
   templateUrl: './app.component.html',
   styles: `
     .app-state {
@@ -35,8 +36,10 @@ import { HomeSetupComponent } from './onboarding/home-setup.component';
 })
 export class AppComponent {
   private readonly api = inject(ApiService);
+  private readonly router = inject(Router);
+  private readonly session = inject(AppSessionService);
   readonly auth = inject(AuthService);
-  readonly context = signal<AppContext | null>(null);
+  readonly context = this.session.context;
   readonly contextStatus = signal<'idle' | 'loading' | 'ready' | 'error'>('idle');
   private contextRequest?: Subscription;
   private loadedUserId?: string;
@@ -51,7 +54,7 @@ export class AppComponent {
       if (user === null) {
         this.contextRequest?.unsubscribe();
         this.loadedUserId = undefined;
-        this.context.set(null);
+        this.session.context.set(null);
         this.contextStatus.set('idle');
         return;
       }
@@ -67,7 +70,7 @@ export class AppComponent {
     this.contextStatus.set('loading');
     this.contextRequest = this.api.context().subscribe({
       next: (context) => {
-        this.context.set(context);
+        this.session.context.set(context);
         this.contextStatus.set('ready');
       },
       error: () => this.contextStatus.set('error'),
@@ -75,11 +78,13 @@ export class AppComponent {
   }
 
   homeCreated(context: AppContext): void {
-    this.context.set(context);
+    this.session.context.set(context);
     this.contextStatus.set('ready');
+    void this.router.navigateByUrl('/');
   }
 
   async logout(): Promise<void> {
     await this.auth.logout();
+    void this.router.navigateByUrl('/');
   }
 }

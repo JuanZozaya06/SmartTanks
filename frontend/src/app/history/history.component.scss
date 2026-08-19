@@ -1,0 +1,132 @@
+:host {
+  display: block;
+}
+
+.history-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 28px;
+  margin: 44px 0 16px;
+  padding: 24px 28px;
+  border: 1px solid #d6e1de;
+  border-radius: 20px;
+  background: #eaf3f1;
+}
+
+.history-toolbar h2,
+.history-toolbar p {
+  margin-bottom: 4px;
+}
+
+.history-toolbar > div:first-child > p:last-child,
+.history-live {
+  color: #637572;
+}
+
+.history-toolbar__controls,
+.period-selector,
+.history-live {
+  display: flex;
+  align-items: center;
+}
+
+.history-toolbar__controls {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.period-selector {
+  padding: 4px;
+  border: 1px solid #c5d9d5;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 72%);
+}
+
+.period-selector button,
+.refresh-button,
+.history-status button {
+  padding: 9px 14px;
+  border: 0;
+  border-radius: 999px;
+  color: #476762;
+  background: transparent;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.period-selector .period-selector__active,
+.refresh-button,
+.history-status button {
+  color: #fff;
+  background: #1f7068;
+}
+
+.refresh-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.history-live {
+  gap: 7px;
+  min-height: 24px;
+  margin: 0 4px 16px;
+  font-size: 0.78rem;
+}
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #d09e35;
+}
+
+.live-dot--active {
+  background: #2ba57e;
+  box-shadow: 0 0 0 4px rgb(43 165 126 / 12%);
+}
+
+.history-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.history-status {
+  padding: 56px 18px;
+  border: 1px solid #d6e1de;
+  border-radius: 18px;
+  color: #637572;
+  background: rgb(255 255 255 / 78%);
+  text-align: center;
+}
+
+.history-status--error {
+  color: #8a4637;
+}
+
+.history-status button {
+  margin-left: 10px;
+}
+
+@media (max-width: 760px) {
+  .history-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+    margin-top: 28px;
+  }
+
+  .history-toolbar__controls {
+    justify-content: flex-start;
+  }
+
+  .history-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .history-live {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+}

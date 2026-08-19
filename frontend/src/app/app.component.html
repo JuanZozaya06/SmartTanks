@@ -16,7 +16,7 @@
     </div>
   </main>
 } @else if (context()?.home) {
-  <app-dashboard [context]="context()!" (logout)="logout()" />
+  <router-outlet />
 } @else {
   <app-home-setup
     [displayName]="auth.user()?.displayName ?? null"

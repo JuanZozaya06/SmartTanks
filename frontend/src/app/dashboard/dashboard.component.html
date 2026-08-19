@@ -13,10 +13,11 @@
     </div>
 
     <div class="topbar-actions">
+      <a class="history-link" routerLink="/history">Ver histórico</a>
       <button class="add-device" type="button" (click)="showDeviceSetup.set(true)">
         Agregar SmartTank
       </button>
-      <button class="logout" type="button" (click)="logout.emit()">Cerrar sesión</button>
+      <button class="logout" type="button" (click)="logout()">Cerrar sesión</button>
     </div>
   </header>
 
@@ -189,55 +190,6 @@
       </article>
     }
   </section>
-
-  @if (tanks().length) {
-    <section class="history" aria-labelledby="history-title">
-      <div class="history__heading">
-        <div>
-          <p class="eyebrow">COMPORTAMIENTO</p>
-          <h2 id="history-title">Histórico de nivel</h2>
-          <p>Consulta cómo ha cambiado cada tanque sin perder los huecos de medición.</p>
-        </div>
-        <div class="period-selector" aria-label="Periodo del histórico">
-          <button
-            type="button"
-            [class.period-selector__active]="historyPeriod() === 'day'"
-            (click)="selectHistoryPeriod('day')"
-          >Día</button>
-          <button
-            type="button"
-            [class.period-selector__active]="historyPeriod() === 'week'"
-            (click)="selectHistoryPeriod('week')"
-          >Semana</button>
-          <button
-            type="button"
-            [class.period-selector__active]="historyPeriod() === 'month'"
-            (click)="selectHistoryPeriod('month')"
-          >Mes</button>
-        </div>
-      </div>
-
-      @if (historyLoading()) {
-        <p class="history-status">Preparando el histórico…</p>
-      } @else if (historyError()) {
-        <div class="history-status history-status--error" role="alert">
-          <span>{{ historyError() }}</span>
-          <button type="button" (click)="selectHistoryPeriod(historyPeriod())">Reintentar</button>
-        </div>
-      } @else {
-        <div class="history-grid">
-          @for (tank of tanks(); track tank.tankId) {
-            @if (historyForTank(tank.tankId); as tankHistory) {
-              <app-tank-history-chart
-                [history]="tankHistory"
-                [timezone]="context().home!.timezone"
-              />
-            }
-          }
-        </div>
-      }
-    </section>
-  }
 
   <section class="device-list" aria-label="SmartTanks asociados">
     <div>

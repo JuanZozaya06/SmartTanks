@@ -1,0 +1,85 @@
+<main class="shell">
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">SMARTTANKS · {{ context().home!.name }}</p>
+      <h1>Histórico de nivel</h1>
+      <p class="subtitle">
+        Las gráficas se actualizan cuando llega una nueva medición.
+      </p>
+    </div>
+
+    <div class="topbar-actions">
+      <a class="history-link" routerLink="/">Volver al dashboard</a>
+      <button class="logout" type="button" (click)="logout()">Cerrar sesión</button>
+    </div>
+  </header>
+
+  <section class="history-toolbar" aria-label="Controles del histórico">
+    <div>
+      <p class="eyebrow">COMPORTAMIENTO</p>
+      <h2>Cómo han cambiado tus tanques</h2>
+      <p>
+        La línea solo se interrumpe cuando pasan más de dos minutos sin mediciones.
+      </p>
+    </div>
+
+    <div class="history-toolbar__controls">
+      <div class="period-selector" aria-label="Periodo del histórico">
+        <button
+          type="button"
+          [class.period-selector__active]="period() === 'day'"
+          (click)="selectPeriod('day')"
+        >Día</button>
+        <button
+          type="button"
+          [class.period-selector__active]="period() === 'week'"
+          (click)="selectPeriod('week')"
+        >Semana</button>
+        <button
+          type="button"
+          [class.period-selector__active]="period() === 'month'"
+          (click)="selectPeriod('month')"
+        >Mes</button>
+      </div>
+      <button class="refresh-button" type="button" (click)="refresh()" [disabled]="loading()">
+        {{ loading() ? 'Actualizando…' : 'Actualizar' }}
+      </button>
+    </div>
+  </section>
+
+  <div class="history-live" aria-live="polite">
+    <span class="live-dot" [class.live-dot--active]="realtimeStatus() === 'live'"></span>
+    @switch (realtimeStatus()) {
+      @case ('live') { Actualización automática activa }
+      @case ('error') { No se detectan nuevas mediciones }
+      @default { Conectando con tus tanques }
+    }
+    @if (updatedAt()) {
+      <span>· Gráficas actualizadas a las {{ updatedAt() | date:'HH:mm:ss' }}</span>
+    }
+  </div>
+
+  @if (error()) {
+    <div class="history-status history-status--error" role="alert">
+      <span>{{ error() }}</span>
+      <button type="button" (click)="refresh()">Reintentar</button>
+    </div>
+  } @else if (loading() && !updatedAt()) {
+    <p class="history-status">Preparando el histórico…</p>
+  } @else {
+    <section class="history-grid" aria-label="Gráficas de nivel">
+      @for (tank of tanks(); track tank.tankId) {
+        @if (historyForTank(tank.tankId); as tankHistory) {
+          <app-tank-history-chart
+            [history]="tankHistory"
+            [timezone]="context().home!.timezone"
+          />
+        }
+      } @empty {
+        <article class="history-status">
+          Aún no hay tanques disponibles para mostrar.
+        </article>
+      }
+    </section>
+  }
+</main>

@@ -398,9 +398,9 @@ GET  /v1/tanks/{tankId}/statistics?period=month
 POST /v1/devices/{deviceId}/transfer-pin
 ```
 
-La consulta de lecturas también permite `from` y `to` juntos, con un máximo de 31 días. La API agrupa la serie en intervalos adecuados para día, semana o mes y recalcula porcentaje y litros desde la presión usando la calibración actual. La gráfica usa la hora de medición, conserva los huecos y distingue las horas estimadas.
+La consulta de lecturas también permite `from` y `to` juntos, con un máximo de 31 días. La API agrupa la serie en intervalos adecuados para día, semana o mes y recalcula porcentaje y litros desde la presión usando la calibración actual. Las gráficas viven en una pantalla `/history` separada del dashboard, se recargan cuando cambia `latestReading`, usan la hora de medición y solo cortan la línea después de más de 120 segundos sin muestras.
 
-## Panel Ionic inicial
+## Panel web inicial
 
 La primera pantalla debería mostrar:
 
@@ -408,7 +408,7 @@ La primera pantalla debería mostrar:
 - Nombre, altura interna, diámetro interno y presión de lleno configurables sin cambiar la identidad técnica `deviceId + sensorId`.
 - Estado de conectividad: dispositivo online/offline y última comunicación.
 - Alertas: nivel bajo, lectura desactualizada, sensor con error.
-- Gráfica de consumo por día, semana y mes.
+- Acceso a una pantalla de histórico con gráficas por día, semana y mes.
 - Última recarga: momento, litros iniciales y duración estimada.
 - Historial de eventos de red y posibles cortes eléctricos.
 
@@ -433,5 +433,5 @@ Más adelante se pueden sumar luces, interruptores inteligentes, consumo eléctr
 5. Crear API de prueba y envío HTTPS.
 6. Implementar cola persistente de pendientes y sincronización por lote.
 7. Crear Firebase/Auth/modelo de datos/claim de dispositivo.
-8. Construir el panel Ionic.
+8. Construir el panel Angular web; evaluar Ionic únicamente si después se requiere empaquetado móvil.
 9. Instalar de forma definitiva en caja impresa en 3D.

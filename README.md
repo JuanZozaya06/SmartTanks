@@ -107,7 +107,7 @@ El panel no contiene datos demostrativos. Sin sesión muestra acceso; sin casa m
 
 ## Actualización en tiempo real
 
-Al aceptar un lote nuevo, la API guarda el histórico en `readings`. La primera lectura de cada `sensorId` crea automáticamente `homes/{homeId}/tanks/{deviceId}:{sensorId}`; las siguientes actualizan su `latestReading`. El panel escucha la colección con Firestore `onSnapshot()`, por lo que detecta tanques nuevos sin consultar la API cada 30 segundos.
+Al aceptar un lote nuevo, la API guarda el histórico en `readings`. La primera lectura de cada `sensorId` crea automáticamente `homes/{homeId}/tanks/{deviceId}:{sensorId}`; las siguientes actualizan su `latestReading`. El dashboard escucha la colección con Firestore `onSnapshot()`, por lo que detecta tanques nuevos sin consultar la API cada 30 segundos. Las gráficas viven en la pantalla `/history`: el mismo listener dispara una recarga acotada del periodo seleccionado cuando cambia la última lectura, sin mantener consultas históricas abiertas.
 
 El usuario crea su cuenta desde Angular y completa únicamente el nombre de la casa y la zona horaria. La API crea la membresía y el panel obtiene el `homeId` desde `/v1/me/context`; los tanques solo aparecen después de recibir datos reales.
 

@@ -27,6 +27,9 @@
         <text x="12" y="126">50%</text>
         <text x="21" y="229">0%</text>
         <path class="history-line" [class.history-line--estimated]="hasEstimatedTime()" [attr.d]="path()" />
+        @for (marker of markers(); track marker.key) {
+          <circle class="history-point" [attr.cx]="marker.x" [attr.cy]="marker.y" r="4" />
+        }
       </svg>
     </div>
 
@@ -37,6 +40,7 @@
     @if (hasEstimatedTime()) {
       <p class="history-note">La línea punteada incluye mediciones con hora estimada.</p>
     }
+    <p class="history-note">Los espacios indican más de dos minutos sin mediciones.</p>
   } @else {
     <div class="history-empty">
       <strong>Sin datos para este periodo</strong>

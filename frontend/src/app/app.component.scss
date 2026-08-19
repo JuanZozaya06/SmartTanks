@@ -24,7 +24,8 @@
 }
 
 .logout,
-.add-device {
+.add-device,
+.history-link {
   padding: 10px 14px;
   border: 1px solid #cbdad7;
   border-radius: 999px;
@@ -32,12 +33,18 @@
   background: rgb(255 255 255 / 65%);
   font-weight: 700;
   cursor: pointer;
+  text-decoration: none;
 }
 
 .add-device {
   border-color: #1f7068;
   color: #fff;
   background: #1f7068;
+}
+
+.history-link {
+  border-color: #9fc7c1;
+  color: #1f7068;
 }
 
 .eyebrow,

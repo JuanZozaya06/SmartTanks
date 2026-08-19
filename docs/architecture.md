@@ -53,6 +53,8 @@ El listener solo se inicia cuando existe un usuario autenticado y `/v1/me/contex
 
 `GET /v1/tanks/{tankId}/readings` verifica la sesión, la casa activa y la membresía antes de consultar `readings`. Acepta `period=day|week|month`, correspondientes a las últimas 24 horas, 7 días o 30 días. También acepta `from` y `to` juntos como fechas ISO 8601 con zona horaria, con un máximo de 31 días.
 
+Angular muestra este histórico en la ruta `/history`, separada del dashboard de estado actual. Mientras esa pantalla está abierta, el listener acotado a `homes/{homeId}/tanks` vuelve a solicitar el periodo seleccionado cuando cambia `latestReading`; no se abre un listener sobre la colección histórica. Para dibujar continuidad entre buckets, el frontend compara `lastObservedAt` del punto anterior con `firstObservedAt` del siguiente y solo corta la línea cuando el hueco real supera 120 segundos.
+
 La respuesta agrupa las lecturas en intervalos de 5 minutos para día, 30 minutos para semana y 2 horas para mes. Cada punto conserva promedio, mínimo, máximo, primer y último valor, cantidad de muestras y la peor `timestampQuality` presente. El panel usa `observedAt`, corta la línea cuando existen huecos y marca como estimados los intervalos que no son completamente `verified`.
 
 Los porcentajes y litros del histórico se recalculan desde `pressureKpa` con la configuración actual del tanque. Esto permite representar mediciones anteriores a la calibración y aplicar correcciones de calibración sin reescribir documentos históricos.
