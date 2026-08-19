@@ -34,8 +34,8 @@
     </div>
 
     <footer>
-      <time>{{ history().from | date:'d MMM, HH:mm':timezone() }}</time>
-      <time>{{ history().to | date:'d MMM, HH:mm':timezone() }}</time>
+      <time>{{ history().from | date:'d MMM y, h:mm a':timezone() }}</time>
+      <time>{{ history().to | date:'d MMM y, h:mm a':timezone() }}</time>
     </footer>
     @if (hasEstimatedTime()) {
       <p class="history-note">La línea punteada incluye mediciones con hora estimada.</p>

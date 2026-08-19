@@ -55,7 +55,10 @@
       @default { Conectando con tus tanques }
     }
     @if (updatedAt()) {
-      <span>· Gráficas actualizadas a las {{ updatedAt() | date:'HH:mm:ss' }}</span>
+      <span>
+        · Gráficas actualizadas el
+        {{ updatedAt() | date:'d MMM y, h:mm:ss a':context().home!.timezone }}
+      </span>
     }
   </div>
 

@@ -207,7 +207,9 @@
           </button>
         }
 
-        <p class="updated">Actualizado {{ tank.updatedAt | date:'HH:mm:ss' }}</p>
+        <p class="updated">
+          Actualizado {{ tank.updatedAt | date:'d MMM y, h:mm:ss a':context().home!.timezone }}
+        </p>
       </article>
     } @empty {
       <article class="tank-card tank-empty">
