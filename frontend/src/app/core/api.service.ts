@@ -18,10 +18,6 @@ export class ApiService {
   private readonly firebase = inject(FirebaseService);
   private readonly baseUrl = runtimeConfig.apiBaseUrl.replace(/\/$/, '');
 
-  health() {
-    return this.http.get<{ status: string; service: string }>(`${this.baseUrl}/v1/health`);
-  }
-
   context() {
     return this.authorizationHeaders().pipe(
       switchMap((headers) =>

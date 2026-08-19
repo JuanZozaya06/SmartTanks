@@ -48,6 +48,15 @@ function dateValue(value: unknown): Date {
   return new Date(0);
 }
 
+function displayTankName(name: unknown, sensorId: string): string {
+  if (typeof name === 'string' && name.trim() && name !== `Tanque ${sensorId}`) {
+    return name;
+  }
+  if (sensorId === 'pressure-a') return 'Tanque 1';
+  if (sensorId === 'pressure-b') return 'Tanque 2';
+  return 'Tanque';
+}
+
 export function mapTankState(tankId: string, data: DocumentData): RealtimeTankState | null {
   const deviceId = data['deviceId'];
   const sensorId = data['sensorId'];
@@ -65,10 +74,7 @@ export function mapTankState(tankId: string, data: DocumentData): RealtimeTankSt
     tankId,
     deviceId,
     sensorId,
-    name:
-      typeof data['name'] === 'string' && data['name'].trim()
-        ? data['name']
-        : `Tanque ${sensorId}`,
+    name: displayTankName(data['name'], sensorId),
     configurationStatus: data['configurationStatus'] === 'configured' ? 'configured' : 'pending',
     status: data['status'] === 'inactive' ? 'inactive' : 'active',
     percentage: numericValue(latestReading['percentage']),

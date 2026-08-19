@@ -47,4 +47,19 @@ describe('mapTankState', () => {
   it('returns null until a tank has its first reading', () => {
     expect(mapTankState('tank_1', { name: 'Tanque principal' })).toBeNull();
   });
+
+  it('replaces a technical discovery name with a friendly tank number', () => {
+    const state = mapTankState('tank-a', {
+      deviceId: 'smarttank-84f703123456',
+      sensorId: 'pressure-a',
+      name: 'Tanque pressure-a',
+      configurationStatus: 'pending',
+      latestReading: {
+        pressureKpa: 10,
+        receivedAt: { toDate: () => new Date('2026-08-19T12:00:00Z') },
+      },
+    });
+
+    expect(state?.name).toBe('Tanque 1');
+  });
 });

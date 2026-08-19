@@ -1,9 +1,9 @@
 import { authErrorMessage } from './auth.service';
 
 describe('authErrorMessage', () => {
-  it('explains when the email and password provider is disabled', () => {
-    expect(authErrorMessage({ code: 'auth/operation-not-allowed' })).toContain(
-      'correo y contraseña',
+  it('uses a user-friendly message when access is unavailable', () => {
+    expect(authErrorMessage({ code: 'auth/operation-not-allowed' })).toBe(
+      'El acceso no está disponible en este momento.',
     );
   });
 });

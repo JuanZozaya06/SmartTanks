@@ -25,7 +25,6 @@ export class DashboardComponent implements OnInit {
 
   readonly context = input.required<AppContext>();
   readonly logout = output<void>();
-  readonly apiStatus = signal<'checking' | 'online' | 'offline'>('checking');
   readonly realtimeStatus = signal<'connecting' | 'live' | 'error'>('connecting');
   readonly tanks = signal<TankSummary[]>([]);
   readonly devices = signal<DeviceSummary[]>([]);
@@ -69,10 +68,6 @@ export class DashboardComponent implements OnInit {
 
   ngOnInit(): void {
     const context = this.context();
-    this.api.health().subscribe({
-      next: () => this.apiStatus.set('online'),
-      error: () => this.apiStatus.set('offline'),
-    });
     this.startTankListener(context.home!.id);
     void this.loadDevices(context.home!.id);
   }

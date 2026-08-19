@@ -5,22 +5,14 @@
       <h1>Agua bajo control</h1>
       <p class="subtitle">
         @switch (realtimeStatus()) {
-          @case ('live') { Lecturas de Firestore en tiempo real }
-          @case ('error') { No fue posible escuchar las lecturas }
-          @default { Conectando con Firestore }
+          @case ('live') { Tus niveles se actualizan en tiempo real }
+          @case ('error') { No pudimos actualizar los niveles }
+          @default { Actualizando la información de tus tanques }
         }
       </p>
     </div>
 
     <div class="topbar-actions">
-      <div class="connection" [attr.data-state]="apiStatus()">
-        <span class="connection__dot"></span>
-        @switch (apiStatus()) {
-          @case ('online') { API conectada }
-          @case ('offline') { API sin conexión }
-          @default { Verificando API }
-        }
-      </div>
       <button class="add-device" type="button" (click)="showDeviceSetup.set(true)">
         Agregar SmartTank
       </button>
@@ -68,7 +60,6 @@
               @else { Nivel estable }
             </p>
             <h2>{{ tank.name }}</h2>
-            <small>{{ tank.sensorId }}</small>
           </div>
           <span class="percentage">{{ tank.percentage === null ? '—' : tank.percentage + '%' }}</span>
         </div>
@@ -193,8 +184,7 @@
         <p class="eyebrow">SIN TANQUES DESCUBIERTOS</p>
         <h2>Esperando la primera medición</h2>
         <p>
-          Asocia un SmartTank. Cuando envíe datos, aparecerá aquí un tanque por cada sensor
-          detectado.
+          Asocia un SmartTank. Cuando envíe sus primeras mediciones, tus tanques aparecerán aquí.
         </p>
       </article>
     }
@@ -211,9 +201,8 @@
           <span class="device-dot" [class.device-dot--active]="device.status === 'active'"></span>
           <div>
             <strong>{{ device.label }}</strong>
-            <small>{{ device.id }}</small>
           </div>
-          <span class="device-state">{{ device.status === 'active' ? 'Asociado' : device.status }}</span>
+          <span class="device-state">{{ device.status === 'active' ? 'Asociado' : 'No disponible' }}</span>
         </article>
       }
     } @else {

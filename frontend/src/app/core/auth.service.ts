@@ -49,8 +49,8 @@ export function authErrorMessage(cause: unknown): string {
     'auth/invalid-email': 'El correo no es válido.',
     'auth/too-many-requests': 'Demasiados intentos. Espera unos minutos.',
     'auth/weak-password': 'La contraseña debe tener al menos 6 caracteres.',
-    'auth/network-request-failed': 'No se pudo conectar con Firebase Authentication.',
-    'auth/operation-not-allowed': 'Habilita el acceso por correo y contraseña en Firebase Authentication.',
+    'auth/network-request-failed': 'No pudimos conectarnos. Comprueba tu conexión e intenta nuevamente.',
+    'auth/operation-not-allowed': 'El acceso no está disponible en este momento.',
   };
   return messages[code] ?? 'No fue posible completar la autenticación.';
 }
