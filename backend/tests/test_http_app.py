@@ -1,5 +1,6 @@
 import os
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 os.environ.setdefault("FIRESTORE_EMULATOR_HOST", "127.0.0.1:8080")
@@ -38,9 +39,11 @@ class FakeDocumentReference:
 
 
 class FakeCollectionReference:
-    def __init__(self, database, path: str):
+    def __init__(self, database, path: str, filters=None, ordering=None):
         self.database = database
         self.path = path
+        self.filters = filters or []
+        self.ordering = ordering
 
     def document(self, document_id: str | None = None):
         return FakeDocumentReference(
@@ -51,11 +54,52 @@ class FakeCollectionReference:
     def stream(self):
         prefix = f"{self.path}/"
         expected_segments = len(self.path.split("/")) + 1
-        return [
+        snapshots = [
             FakeSnapshot(path.rsplit("/", maxsplit=1)[-1], True, data)
             for path, data in self.database.documents.items()
             if path.startswith(prefix) and len(path.split("/")) == expected_segments
         ]
+        for field_path, operator, expected in self.filters:
+            snapshots = [
+                snapshot
+                for snapshot in snapshots
+                if self._matches((snapshot.data or {}).get(field_path), operator, expected)
+            ]
+        if self.ordering:
+            field_path, direction = self.ordering
+            snapshots.sort(
+                key=lambda snapshot: (snapshot.data or {}).get(field_path),
+                reverse=direction == "DESCENDING",
+            )
+        return snapshots
+
+    def where(self, *, filter):
+        return FakeCollectionReference(
+            self.database,
+            self.path,
+            [*self.filters, (filter.field_path, filter.op_string, filter.value)],
+            self.ordering,
+        )
+
+    def order_by(self, field_path, direction="ASCENDING"):
+        return FakeCollectionReference(
+            self.database,
+            self.path,
+            self.filters,
+            (field_path, direction),
+        )
+
+    @staticmethod
+    def _matches(value, operator, expected):
+        if value is None:
+            return False
+        if operator == "==":
+            return value == expected
+        if operator == ">=":
+            return value >= expected
+        if operator == "<=":
+            return value <= expected
+        raise AssertionError(f"Operador no soportado por el doble: {operator}")
 
 
 class FakeWriteBatch:
@@ -332,6 +376,114 @@ def test_user_context_returns_active_home(monkeypatch) -> None:
         "role": "owner",
     }
     assert body["tanks"][0]["id"] == "smarttank-84f703123456:pressure-a"
+
+
+def test_user_can_read_bucketed_tank_history_with_current_calibration(monkeypatch) -> None:
+    tank_id = "smarttank-84f703123456:pressure-a"
+    database = FakeFirestore(
+        {
+            "users/user_01": {"activeHomeId": "home_01"},
+            "homes/home_01/members/user_01": {"role": "viewer"},
+            f"homes/home_01/tanks/{tank_id}": {
+                "deviceId": "smarttank-84f703123456",
+                "sensorId": "pressure-a",
+                "name": "Tanque principal",
+                "heightCm": 200,
+                "diameterCm": 51,
+                "fullPressureKpa": 19.6,
+                "configurationStatus": "configured",
+            },
+            "readings/reading_01": {
+                "homeId": "home_01",
+                "tankId": tank_id,
+                "observedAt": datetime(2026, 8, 19, 12, 1, tzinfo=UTC),
+                "timestampQuality": "verified",
+                "pressureKpa": 9.8,
+            },
+            "readings/reading_02": {
+                "homeId": "home_01",
+                "tankId": tank_id,
+                "observedAt": datetime(2026, 8, 19, 12, 4, tzinfo=UTC),
+                "timestampQuality": "estimated",
+                "pressureKpa": 19.6,
+            },
+            "readings/reading_03": {
+                "homeId": "home_01",
+                "tankId": tank_id,
+                "observedAt": datetime(2026, 8, 19, 12, 6, tzinfo=UTC),
+                "timestampQuality": "verified",
+                "pressureKpa": 4.9,
+            },
+            "readings/other_tank": {
+                "homeId": "home_01",
+                "tankId": "another-tank",
+                "observedAt": datetime(2026, 8, 19, 12, 2, tzinfo=UTC),
+                "timestampQuality": "verified",
+                "pressureKpa": 12,
+            },
+        }
+    )
+    monkeypatch.setattr("src.http_app.get_firestore_client", lambda: database)
+    monkeypatch.setattr("src.http_app.require_user", lambda request: {"uid": "user_01"})
+
+    response = app.test_client().get(
+        f"/v1/tanks/{tank_id}/readings",
+        query_string={
+            "from": "2026-08-19T12:00:00Z",
+            "to": "2026-08-19T13:00:00Z",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["period"] == "custom"
+    assert body["bucketSeconds"] == 300
+    assert body["sampleCount"] == 3
+    assert len(body["points"]) == 2
+    assert body["points"][0]["percentage"] == 75
+    assert body["points"][0]["liters"] == 306.42
+    assert body["points"][0]["timestampQuality"] == "estimated"
+    assert body["points"][1]["percentage"] == 25
+
+
+def test_tank_history_rejects_ranges_longer_than_31_days(monkeypatch) -> None:
+    tank_id = "smarttank-84f703123456:pressure-a"
+    database = FakeFirestore(
+        {
+            "users/user_01": {"activeHomeId": "home_01"},
+            "homes/home_01/members/user_01": {"role": "owner"},
+            f"homes/home_01/tanks/{tank_id}": {
+                "deviceId": "smarttank-84f703123456",
+                "sensorId": "pressure-a",
+            },
+        }
+    )
+    monkeypatch.setattr("src.http_app.get_firestore_client", lambda: database)
+    monkeypatch.setattr("src.http_app.require_user", lambda request: {"uid": "user_01"})
+
+    response = app.test_client().get(
+        f"/v1/tanks/{tank_id}/readings",
+        query_string={
+            "from": "2026-07-01T00:00:00Z",
+            "to": "2026-08-19T00:00:00Z",
+        },
+    )
+
+    assert response.status_code == 422
+    assert "31 días" in response.get_json()["error"]["message"]
+
+
+def test_tank_history_requires_active_home_membership(monkeypatch) -> None:
+    database = FakeFirestore(
+        {"users/user_01": {"activeHomeId": "home_without_membership"}}
+    )
+    monkeypatch.setattr("src.http_app.get_firestore_client", lambda: database)
+    monkeypatch.setattr("src.http_app.require_user", lambda request: {"uid": "user_01"})
+
+    response = app.test_client().get("/v1/tanks/tank_01/readings?period=day")
+
+    assert response.status_code == 403
+    assert "casa activa" in response.get_json()["error"]["message"]
 
 
 def test_owner_can_rename_a_discovered_tank(monkeypatch) -> None:

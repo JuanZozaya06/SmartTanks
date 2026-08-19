@@ -107,6 +107,7 @@ POST /v1/homes
 GET  /v1/homes/{homeId}/devices
 POST /v1/homes/{homeId}/devices/claim
 PATCH /v1/homes/{homeId}/tanks/{tankId}
+GET  /v1/tanks/{tankId}/readings?period=day|week|month
 ```
 
 El registro, inicio y cierre de sesión se realizan con Firebase Auth en el navegador. `POST /v1/homes` crea usuario de aplicación, casa y membresía `owner` en un batch; los tanques aparecen únicamente después de recibir mediciones reales. El navegador nunca escribe estos documentos directamente.
@@ -115,7 +116,6 @@ Rutas de usuario pendientes:
 
 ```text
 GET  /v1/homes/{homeId}/dashboard
-GET  /v1/tanks/{tankId}/readings?from=...&to=...
 GET  /v1/tanks/{tankId}/statistics?period=month
 POST /v1/devices/{deviceId}/transfer-pin
 ```

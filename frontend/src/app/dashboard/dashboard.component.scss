@@ -1,0 +1,79 @@
+.history {
+  margin-top: 24px;
+  padding: 26px 28px;
+  border: 1px solid #d6e1de;
+  border-radius: 20px;
+  background: #eaf3f1;
+}
+
+.history__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 20px;
+}
+
+.history__heading p {
+  margin-bottom: 0;
+  color: #637572;
+}
+
+.history-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.period-selector {
+  display: flex;
+  padding: 4px;
+  border: 1px solid #c5d9d5;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 65%);
+}
+
+.period-selector button,
+.history-status button {
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 999px;
+  color: #476762;
+  background: transparent;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.period-selector .period-selector__active {
+  color: #fff;
+  background: #1f7068;
+}
+
+.history-status {
+  padding: 48px 16px;
+  border-radius: 16px;
+  color: #637572;
+  background: rgb(255 255 255 / 60%);
+  text-align: center;
+}
+
+.history-status--error {
+  color: #8a4637;
+}
+
+.history-status button {
+  margin-left: 8px;
+  color: #fff;
+  background: #1f7068;
+}
+
+@media (max-width: 720px) {
+  .history__heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .history-grid {
+    grid-template-columns: 1fr;
+  }
+}

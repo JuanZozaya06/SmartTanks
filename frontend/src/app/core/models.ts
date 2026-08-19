@@ -54,3 +54,39 @@ export interface DeviceSummary {
   lastSeenAt: string | null;
   claimedAt: string | null;
 }
+
+export type HistoryPeriod = 'day' | 'week' | 'month';
+
+export interface TankHistoryPoint {
+  observedAt: string;
+  firstObservedAt: string;
+  lastObservedAt: string;
+  sampleCount: number;
+  timestampQuality: 'verified' | 'estimated' | 'pending';
+  pressureKpa: number | null;
+  minPressureKpa: number | null;
+  maxPressureKpa: number | null;
+  firstPressureKpa: number | null;
+  lastPressureKpa: number | null;
+  percentage: number | null;
+  minPercentage: number | null;
+  maxPercentage: number | null;
+  firstPercentage: number | null;
+  lastPercentage: number | null;
+  liters: number | null;
+  minLiters: number | null;
+  maxLiters: number | null;
+  firstLiters: number | null;
+  lastLiters: number | null;
+}
+
+export interface TankHistoryResponse {
+  tank: TankConfiguration;
+  period: HistoryPeriod | 'custom';
+  from: string;
+  to: string;
+  bucketSeconds: number;
+  sampleCount: number;
+  skippedCount: number;
+  points: TankHistoryPoint[];
+}

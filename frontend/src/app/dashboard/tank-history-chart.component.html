@@ -1,0 +1,46 @@
+<article class="history-card">
+  <header>
+    <div>
+      <p class="history-card__eyebrow">{{ history().sampleCount }} mediciones</p>
+      <h3>{{ history().tank.name }}</h3>
+    </div>
+    <strong>{{ latestPercentage() === null ? '—' : latestPercentage() + '%' }}</strong>
+  </header>
+
+  @if (path()) {
+    <div class="history-metrics" aria-label="Resumen del periodo">
+      <span>Mínimo <b>{{ minimumPercentage() === null ? '—' : minimumPercentage() + '%' }}</b></span>
+      <span>Máximo <b>{{ maximumPercentage() === null ? '—' : maximumPercentage() + '%' }}</b></span>
+      <span>Disponible <b>{{ latestLiters() === null ? '—' : latestLiters() + ' L' }}</b></span>
+    </div>
+
+    <div class="chart-scroll">
+      <svg
+        [attr.viewBox]="'0 0 ' + chartWidth + ' ' + chartHeight"
+        role="img"
+        [attr.aria-label]="'Evolución del nivel de ' + history().tank.name"
+      >
+        <line x1="42" x2="744" y1="18" y2="18" />
+        <line x1="42" x2="744" y1="121" y2="121" />
+        <line x1="42" x2="744" y1="224" y2="224" />
+        <text x="4" y="23">100%</text>
+        <text x="12" y="126">50%</text>
+        <text x="21" y="229">0%</text>
+        <path class="history-line" [class.history-line--estimated]="hasEstimatedTime()" [attr.d]="path()" />
+      </svg>
+    </div>
+
+    <footer>
+      <time>{{ history().from | date:'d MMM, HH:mm':timezone() }}</time>
+      <time>{{ history().to | date:'d MMM, HH:mm':timezone() }}</time>
+    </footer>
+    @if (hasEstimatedTime()) {
+      <p class="history-note">La línea punteada incluye mediciones con hora estimada.</p>
+    }
+  } @else {
+    <div class="history-empty">
+      <strong>Sin datos para este periodo</strong>
+      <p>Las próximas mediciones aparecerán aquí automáticamente.</p>
+    </div>
+  }
+</article>

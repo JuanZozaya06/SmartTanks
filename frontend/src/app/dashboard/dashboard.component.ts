@@ -3,9 +3,10 @@ import { Component, DestroyRef, OnInit, computed, inject, input, output, signal 
 import { firstValueFrom } from 'rxjs';
 
 import { ApiService } from '../core/api.service';
-import { AppContext, DeviceSummary } from '../core/models';
+import { AppContext, DeviceSummary, HistoryPeriod, TankHistoryResponse } from '../core/models';
 import { RealtimeTankState, TankRealtimeService } from '../core/tank-realtime.service';
 import { DeviceClaimComponent } from '../devices/device-claim.component';
+import { TankHistoryChartComponent } from './tank-history-chart.component';
 
 interface TankSummary extends RealtimeTankState {
   state: 'normal' | 'low' | 'unknown';
@@ -13,15 +14,17 @@ interface TankSummary extends RealtimeTankState {
 
 @Component({
   selector: 'app-dashboard',
-  imports: [DatePipe, DeviceClaimComponent],
+  imports: [DatePipe, DeviceClaimComponent, TankHistoryChartComponent],
   templateUrl: './dashboard.component.html',
-  styleUrl: '../app.component.scss',
+  styleUrls: ['../app.component.scss', './dashboard.component.scss'],
 })
 export class DashboardComponent implements OnInit {
   private readonly api = inject(ApiService);
   private readonly realtime = inject(TankRealtimeService);
   private readonly destroyRef = inject(DestroyRef);
   private tankUnsubscriber?: () => void;
+  private historyRequestId = 0;
+  private historyTankIds = '';
 
   readonly context = input.required<AppContext>();
   readonly logout = output<void>();
@@ -36,6 +39,10 @@ export class DashboardComponent implements OnInit {
   readonly tankFullPressureDraft = signal('');
   readonly savingTankId = signal<string | null>(null);
   readonly tankConfigurationError = signal<string | null>(null);
+  readonly historyPeriod = signal<HistoryPeriod>('day');
+  readonly historyLoading = signal(false);
+  readonly historyError = signal<string | null>(null);
+  readonly historyByTank = signal<Record<string, TankHistoryResponse>>({});
   readonly canManageTanks = computed(() =>
     ['owner', 'admin'].includes(this.context().home?.role ?? ''),
   );
@@ -78,6 +85,22 @@ export class DashboardComponent implements OnInit {
       device,
     ]);
     this.showDeviceSetup.set(false);
+  }
+
+  selectHistoryPeriod(period: HistoryPeriod): void {
+    if (
+      period === this.historyPeriod() &&
+      Object.keys(this.historyByTank()).length &&
+      !this.historyError()
+    ) {
+      return;
+    }
+    this.historyPeriod.set(period);
+    void this.loadHistory();
+  }
+
+  historyForTank(tankId: string): TankHistoryResponse | null {
+    return this.historyByTank()[tankId] ?? null;
   }
 
   startTankConfiguration(tank: TankSummary): void {
@@ -154,6 +177,7 @@ export class DashboardComponent implements OnInit {
         ),
       );
       this.cancelTankConfiguration();
+      void this.loadHistory();
     } catch {
       this.tankConfigurationError.set('No fue posible guardar la configuración del tanque.');
     } finally {
@@ -180,8 +204,7 @@ export class DashboardComponent implements OnInit {
     this.tankUnsubscriber = this.realtime.listen(
       homeId,
       (states) => {
-        this.tanks.set(
-          states.map((state) => ({
+        const summaries = states.map((state) => ({
             ...state,
             state:
               state.percentage === null
@@ -189,8 +212,13 @@ export class DashboardComponent implements OnInit {
                 : state.percentage <= state.lowLevelPercentage
                   ? 'low'
                   : 'normal',
-          })),
-        );
+          }) as TankSummary);
+        this.tanks.set(summaries);
+        const tankIds = summaries.map((tank) => tank.tankId).sort().join('|');
+        if (tankIds !== this.historyTankIds) {
+          this.historyTankIds = tankIds;
+          void this.loadHistory();
+        }
         this.realtimeStatus.set('live');
       },
       () => this.realtimeStatus.set('error'),
@@ -200,5 +228,35 @@ export class DashboardComponent implements OnInit {
   private stopTankListeners(): void {
     this.tankUnsubscriber?.();
     this.tankUnsubscriber = undefined;
+  }
+
+  private async loadHistory(): Promise<void> {
+    const tanks = this.tanks();
+    if (!tanks.length) {
+      this.historyByTank.set({});
+      return;
+    }
+    const requestId = ++this.historyRequestId;
+    this.historyLoading.set(true);
+    this.historyError.set(null);
+    try {
+      const entries = await Promise.all(
+        tanks.map(async (tank) => [
+          tank.tankId,
+          await firstValueFrom(this.api.tankHistory(tank.tankId, this.historyPeriod())),
+        ] as const),
+      );
+      if (requestId === this.historyRequestId) {
+        this.historyByTank.set(Object.fromEntries(entries));
+      }
+    } catch {
+      if (requestId === this.historyRequestId) {
+        this.historyError.set('No fue posible cargar el comportamiento de los tanques.');
+      }
+    } finally {
+      if (requestId === this.historyRequestId) {
+        this.historyLoading.set(false);
+      }
+    }
   }
 }

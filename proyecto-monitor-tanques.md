@@ -391,10 +391,12 @@ POST /v1/homes
 POST /v1/homes/{homeId}/devices/claim
 PATCH /v1/homes/{homeId}/tanks/{tankId}
 GET  /v1/homes/{homeId}/dashboard
-GET  /v1/tanks/{tankId}/readings?from=...&to=...
+GET  /v1/tanks/{tankId}/readings?period=day|week|month
 GET  /v1/tanks/{tankId}/statistics?period=month
 POST /v1/devices/{deviceId}/transfer-pin
 ```
+
+La consulta de lecturas también permite `from` y `to` juntos, con un máximo de 31 días. La API agrupa la serie en intervalos adecuados para día, semana o mes y recalcula porcentaje y litros desde la presión usando la calibración actual. La gráfica usa la hora de medición, conserva los huecos y distingue las horas estimadas.
 
 ## Panel Ionic inicial
 

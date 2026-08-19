@@ -85,6 +85,14 @@ Content-Type: application/json
   "fullPressureKpa": 19.6
 }
 
+### Histórico agregado de las últimas 24 horas
+GET {{api}}/v1/tanks/{{tankId}}/readings?period=day
+Authorization: Bearer {{userToken}}
+
+### Histórico agregado de un rango explícito, máximo 31 días
+GET {{api}}/v1/tanks/{{tankId}}/readings?from=2026-08-18T00:00:00Z&to=2026-08-19T00:00:00Z
+Authorization: Bearer {{userToken}}
+
 ### Evento de arranque
 POST {{api}}/v1/device/events
 Content-Type: application/json

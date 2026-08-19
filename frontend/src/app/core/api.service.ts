@@ -7,6 +7,8 @@ import {
   AppContext,
   DeviceSummary,
   HomeSetupRequest,
+  HistoryPeriod,
+  TankHistoryResponse,
   TankConfiguration,
   TankUpdateRequest,
 } from './models';
@@ -64,6 +66,17 @@ export class ApiService {
           `${this.baseUrl}/v1/homes/${encodeURIComponent(homeId)}/tanks/${encodeURIComponent(tankId)}`,
           payload,
           { headers },
+        ),
+      ),
+    );
+  }
+
+  tankHistory(tankId: string, period: HistoryPeriod) {
+    return this.authorizationHeaders().pipe(
+      switchMap((headers) =>
+        this.http.get<TankHistoryResponse>(
+          `${this.baseUrl}/v1/tanks/${encodeURIComponent(tankId)}/readings`,
+          { headers, params: { period } },
         ),
       ),
     );

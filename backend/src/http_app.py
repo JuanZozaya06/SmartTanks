@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from math import isfinite, pi
 from typing import Any
 
 from flask import Flask, jsonify, request
-from google.cloud.firestore_v1.base_query import FieldFilter
+from google.cloud.firestore_v1.base_query import BaseQuery, FieldFilter
 from pydantic import ValidationError
 
 from .auth import AuthenticationError, require_device, require_user
@@ -15,6 +15,13 @@ from .device_claim import verify_setup_pin
 from .schemas import DeviceClaim, DeviceEvent, HomeSetup, ReadingBatch, TankUpdate
 
 app = Flask(__name__)
+
+_HISTORY_PERIODS = {
+    "day": (timedelta(days=1), 5 * 60),
+    "week": (timedelta(days=7), 30 * 60),
+    "month": (timedelta(days=30), 2 * 60 * 60),
+}
+_MAX_HISTORY_WINDOW = timedelta(days=31)
 
 
 def _json_error(message: str, status: int, details: Any = None):
@@ -74,6 +81,85 @@ def _number(value: Any) -> float | None:
         return None
     number = float(value)
     return number if isfinite(number) else None
+
+
+def _datetime_value(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value.astimezone(UTC) if value.tzinfo else None
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed.astimezone(UTC) if parsed.tzinfo else None
+
+
+def _history_window() -> tuple[str, datetime, datetime, int]:
+    period = request.args.get("period", "day").strip().lower()
+    from_value = request.args.get("from")
+    to_value = request.args.get("to")
+    if bool(from_value) != bool(to_value):
+        raise ValueError("from y to deben enviarse juntos.")
+
+    if from_value and to_value:
+        start = _datetime_value(from_value)
+        end = _datetime_value(to_value)
+        if start is None or end is None:
+            raise ValueError("from y to deben ser fechas ISO 8601 con zona horaria.")
+        if start >= end:
+            raise ValueError("from debe ser anterior a to.")
+        duration = end - start
+        if duration > _MAX_HISTORY_WINDOW:
+            raise ValueError("El rango histórico no puede superar 31 días.")
+        if duration <= timedelta(days=1):
+            bucket_seconds = 5 * 60
+        elif duration <= timedelta(days=7):
+            bucket_seconds = 30 * 60
+        else:
+            bucket_seconds = 2 * 60 * 60
+        return "custom", start, end, bucket_seconds
+
+    configured = _HISTORY_PERIODS.get(period)
+    if configured is None:
+        raise ValueError("period debe ser day, week o month.")
+    duration, bucket_seconds = configured
+    end = datetime.now(UTC)
+    return period, end - duration, end, bucket_seconds
+
+
+def _history_point(bucket: dict[str, Any], bucket_seconds: int) -> dict[str, Any]:
+    count = int(bucket["sampleCount"])
+    quality = max(
+        bucket["qualities"],
+        key=lambda value: {"verified": 0, "estimated": 1, "pending": 2}.get(value, 2),
+    )
+    point: dict[str, Any] = {
+        "observedAt": datetime.fromtimestamp(bucket["bucketEpoch"], UTC).isoformat(),
+        "firstObservedAt": bucket["firstObservedAt"].isoformat(),
+        "lastObservedAt": bucket["lastObservedAt"].isoformat(),
+        "sampleCount": count,
+        "timestampQuality": quality,
+    }
+    for field in ("pressureKpa", "percentage", "liters"):
+        values = bucket[field]
+        suffix = f"{field[0].upper()}{field[1:]}"
+        point.update(
+            {
+                field: None,
+                f"min{suffix}": None,
+                f"max{suffix}": None,
+                f"first{suffix}": None,
+                f"last{suffix}": None,
+            }
+        )
+        if values["count"]:
+            point[field] = round(values["sum"] / values["count"], 2)
+            point[f"min{suffix}"] = round(values["min"], 2)
+            point[f"max{suffix}"] = round(values["max"], 2)
+            point[f"first{suffix}"] = round(values["first"], 2)
+            point[f"last{suffix}"] = round(values["last"], 2)
+    return point
 
 
 def _tank_dimensions(data: dict[str, Any]) -> tuple[float, float] | None:
@@ -376,6 +462,111 @@ def update_tank(home_id: str, tank_id: str):
     write_batch.commit()
     tank_data.update(update)
     return jsonify({"tank": _tank_response(tank_id, tank_data)})
+
+
+@app.route("/v1/tanks/<tank_id>/readings", methods=["GET", "OPTIONS"])
+def tank_readings(tank_id: str):
+    if request.method == "OPTIONS":
+        return "", 204
+
+    db = get_firestore_client()
+    _, user_id = _authenticated_user()
+    user_snapshot = db.collection("users").document(user_id).get()
+    user_data = user_snapshot.to_dict() if user_snapshot.exists else {}
+    home_id = str((user_data or {}).get("activeHomeId", "")).strip()
+    if not home_id or not _home_member_role(db, user_id, home_id):
+        return _json_error("El usuario no pertenece a una casa activa.", 403)
+
+    tank_ref = (
+        db.collection("homes")
+        .document(home_id)
+        .collection("tanks")
+        .document(tank_id)
+    )
+    tank_snapshot = tank_ref.get()
+    if not tank_snapshot.exists:
+        return _json_error("El tanque no existe o no pertenece a esta casa.", 404)
+    tank_data = tank_snapshot.to_dict() or {}
+    if not tank_data.get("deviceId") or not tank_data.get("sensorId"):
+        return _json_error("El tanque no fue descubierto desde un sensor válido.", 409)
+
+    try:
+        period, start, end, bucket_seconds = _history_window()
+    except ValueError as error:
+        return _json_error(str(error), 422)
+
+    query = (
+        db.collection("readings")
+        .where(filter=FieldFilter("homeId", "==", home_id))
+        .where(filter=FieldFilter("tankId", "==", tank_id))
+        .where(filter=FieldFilter("observedAt", ">=", start))
+        .where(filter=FieldFilter("observedAt", "<=", end))
+        .order_by("observedAt", direction=BaseQuery.DESCENDING)
+    )
+    buckets: dict[int, dict[str, Any]] = {}
+    sample_count = 0
+    skipped_count = 0
+    for snapshot in query.stream():
+        reading = snapshot.to_dict() or {}
+        observed_at = _datetime_value(reading.get("observedAt"))
+        if observed_at is None:
+            skipped_count += 1
+            continue
+        derived = _derive_reading(reading, tank_data)
+        bucket_epoch = int(observed_at.timestamp()) // bucket_seconds * bucket_seconds
+        bucket = buckets.get(bucket_epoch)
+        if bucket is None:
+            bucket = {
+                "bucketEpoch": bucket_epoch,
+                "firstObservedAt": observed_at,
+                "lastObservedAt": observed_at,
+                "sampleCount": 0,
+                "qualities": set(),
+                "pressureKpa": {"count": 0, "sum": 0.0},
+                "percentage": {"count": 0, "sum": 0.0},
+                "liters": {"count": 0, "sum": 0.0},
+            }
+            buckets[bucket_epoch] = bucket
+
+        is_earlier = observed_at < bucket["firstObservedAt"]
+        is_later = observed_at > bucket["lastObservedAt"]
+        bucket["sampleCount"] += 1
+        bucket["qualities"].add(str(derived.get("timestampQuality", "pending")))
+        for field in ("pressureKpa", "percentage", "liters"):
+            value = _number(derived.get(field))
+            if value is None:
+                continue
+            values = bucket[field]
+            values["count"] += 1
+            values["sum"] += value
+            values["min"] = min(values.get("min", value), value)
+            values["max"] = max(values.get("max", value), value)
+            if values["count"] == 1 or is_earlier:
+                values["first"] = value
+            if values["count"] == 1 or is_later:
+                values["last"] = value
+        if is_earlier:
+            bucket["firstObservedAt"] = observed_at
+        if is_later:
+            bucket["lastObservedAt"] = observed_at
+        sample_count += 1
+
+    points = [
+        _history_point(buckets[key], bucket_seconds)
+        for key in sorted(buckets)
+    ]
+    return jsonify(
+        {
+            "tank": _tank_response(tank_id, tank_data),
+            "period": period,
+            "from": start.isoformat(),
+            "to": end.isoformat(),
+            "bucketSeconds": bucket_seconds,
+            "sampleCount": sample_count,
+            "skippedCount": skipped_count,
+            "points": points,
+        }
+    )
 
 
 @app.route("/v1/homes/<home_id>/devices/claim", methods=["POST", "OPTIONS"])

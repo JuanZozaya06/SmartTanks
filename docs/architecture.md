@@ -49,6 +49,16 @@ API confirma secuencia ─┘                                      │
 
 El listener solo se inicia cuando existe un usuario autenticado y `/v1/me/context` confirma su casa y membresía. Las reglas permiten la lectura del tanque a miembros, pero todas las escrituras continúan pasando por la API.
 
+## Histórico de nivel
+
+`GET /v1/tanks/{tankId}/readings` verifica la sesión, la casa activa y la membresía antes de consultar `readings`. Acepta `period=day|week|month`, correspondientes a las últimas 24 horas, 7 días o 30 días. También acepta `from` y `to` juntos como fechas ISO 8601 con zona horaria, con un máximo de 31 días.
+
+La respuesta agrupa las lecturas en intervalos de 5 minutos para día, 30 minutos para semana y 2 horas para mes. Cada punto conserva promedio, mínimo, máximo, primer y último valor, cantidad de muestras y la peor `timestampQuality` presente. El panel usa `observedAt`, corta la línea cuando existen huecos y marca como estimados los intervalos que no son completamente `verified`.
+
+Los porcentajes y litros del histórico se recalculan desde `pressureKpa` con la configuración actual del tanque. Esto permite representar mediciones anteriores a la calibración y aplicar correcciones de calibración sin reescribir documentos históricos.
+
+La agrupación actual ocurre dentro de la petición y reduce el tamaño de la respuesta, pero todavía lee los documentos crudos de la ventana seleccionada. Antes de aumentar dispositivos o retención se deben incorporar agregados persistentes horarios/diarios para evitar releer un mes completo en cada apertura.
+
 ## Flujo de cuenta y configuración inicial
 
 ```text
@@ -137,7 +147,7 @@ Cloud Functions requiere Blaze y una cuenta de facturación. Deben configurarse 
 2. Aprobar o descartar el auto-registro y su credencial de bootstrap.
 3. Implementar transferencia y rotación de credenciales.
 4. Añadir App Check al panel.
-5. Añadir rutas autenticadas de histórico y estadísticas.
+5. Añadir la ruta autenticada de estadísticas.
 6. Incorporar validación automatizada de reglas sin ejecutar casos destructivos contra producción.
 7. Configurar retención o agregación de históricos antes de crecer; TTL no entra en la cuota gratuita.
 
