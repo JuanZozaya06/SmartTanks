@@ -115,7 +115,7 @@ Cada tanque descubierto debe configurarse desde el panel con sus medidas interna
 
 El panel ofrece vistas de las últimas 24 horas, 7 días y 30 días. La API agrupa respectivamente en intervalos de 5 minutos, 30 minutos y 2 horas, recalcula el histórico con la calibración actual y conserva los huecos de medición. También admite un rango explícito `from` + `to` de hasta 31 días. Esta agrupación limita los puntos enviados al navegador; los agregados persistentes siguen pendientes antes de aumentar la cantidad de dispositivos o la retención.
 
-Si una versión de firmware envía `observedAt: null` pero conserva `elapsedMs` y `bootSessionId`, la API reconstruye una fecha estimada tomando la muestra más reciente del lote o sesión como ancla temporal del servidor. El panel distingue estas muestras; solo una hora sincronizada por NTP puede marcarse como `verified`.
+Si una versión de firmware envía `observedAt: null` pero conserva `elapsedMs` y `bootSessionId`, la API puede reconstruir una fecha estimada cuando dispone de varios instantes del mismo lote o sesión. Una fila antigua aislada permanece pendiente para no fecharla incorrectamente como si acabara de medirse. El panel distingue estas muestras; solo una hora sincronizada por NTP puede marcarse como `verified`.
 
 Antes de usar el registro, habilitar el proveedor **Correo electrónico/contraseña** en Firebase Authentication.
 

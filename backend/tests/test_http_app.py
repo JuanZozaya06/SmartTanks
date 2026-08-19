@@ -309,6 +309,42 @@ def test_pending_batch_reconstructs_observed_time_from_elapsed_ms(monkeypatch) -
     assert second["observedAt"] == received_at
 
 
+def test_pending_single_instant_is_not_dated_as_received_time(monkeypatch) -> None:
+    database = FakeFirestore()
+    identity = DeviceIdentity(device_id="dev_01", data={"homeId": "home_01"})
+    monkeypatch.setattr("src.http_app.get_firestore_client", lambda: database)
+    monkeypatch.setattr("src.http_app.require_device", lambda request, db: identity)
+
+    response = app.test_client().post(
+        "/v1/device/readings/batch",
+        json={
+            "deviceId": "dev_01",
+            "bootSessionId": "boot_old",
+            "readings": [
+                {
+                    "sequence": 8,
+                    "sensorId": "pressure-a",
+                    "timestampQuality": "pending",
+                    "elapsedMs": 1000,
+                    "pressureKpa": 4.9,
+                },
+                {
+                    "sequence": 8,
+                    "sensorId": "pressure-b",
+                    "timestampQuality": "pending",
+                    "elapsedMs": 1000,
+                    "pressureKpa": 5.1,
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 202
+    for _, historical in database.write_batch.creates:
+        assert historical["observedAt"] is None
+        assert historical["timestampQuality"] == "pending"
+
+
 def test_reading_keeps_the_custom_name_of_an_existing_sensor(monkeypatch) -> None:
     tank_path = "homes/home_01/tanks/dev_01:pressure-a"
     database = FakeFirestore(

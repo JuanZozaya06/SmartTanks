@@ -7,6 +7,7 @@
 #include <WiFiClientSecure.h>
 #include <esp_mac.h>
 #include <math.h>
+#include <time.h>
 
 #include "certificates.h"
 #include "arduino_secrets.h"
@@ -23,6 +24,7 @@ constexpr uint16_t DNS_PORT = 53;
 constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 20'000;
 constexpr uint32_t READING_INTERVAL_MS = 30'000;
 constexpr uint32_t SYNC_INTERVAL_MS = 8'000;
+constexpr uint32_t TIME_STATUS_INTERVAL_MS = 1'000;
 constexpr uint16_t MAX_QUEUED_BATCHES = 120;
 constexpr char API_BASE_URL[] = "https://us-east1-smarttanks-830ba.cloudfunctions.net/api";
 constexpr char SENSOR_ID_A[] = "pressure-a";
@@ -30,6 +32,9 @@ constexpr char SENSOR_ID_B[] = "pressure-b";
 constexpr char PREF_SEQUENCE[] = "sequence";
 constexpr char QUEUE_PATH[] = "/readings.csv";
 constexpr char QUEUE_TEMP_PATH[] = "/readings.tmp";
+constexpr char NTP_SERVER_PRIMARY[] = "pool.ntp.org";
+constexpr char NTP_SERVER_SECONDARY[] = "time.google.com";
+constexpr time_t MIN_VALID_EPOCH = 1'704'067'200;  // 2024-01-01T00:00:00Z
 
 DNSServer dnsServer;
 WebServer server(80);
@@ -44,6 +49,9 @@ String stableDeviceId;
 String bootSessionId;
 uint32_t lastReadingAt = 0;
 uint32_t lastSyncAt = 0;
+uint32_t lastTimeStatusAt = 0;
+bool timeSyncConfigured = false;
+bool timeSyncReported = false;
 
 String deviceIdFromEfuse() {
   uint8_t mac[6];
@@ -60,6 +68,41 @@ String deviceIdFromEfuse() {
 
 String deviceSuffix() {
   return stableDeviceId.substring(stableDeviceId.length() - 4);
+}
+
+bool hasValidSystemTime() {
+  return time(nullptr) >= MIN_VALID_EPOCH;
+}
+
+void configureTimeSynchronization() {
+  if (WiFi.status() != WL_CONNECTED || timeSyncConfigured) return;
+  configTime(0, 0, NTP_SERVER_PRIMARY, NTP_SERVER_SECONDARY);
+  timeSyncConfigured = true;
+  Serial.println("Hora: sincronización NTP iniciada.");
+}
+
+void updateTimeSynchronizationStatus() {
+  if (WiFi.status() == WL_CONNECTED) configureTimeSynchronization();
+  if (!timeSyncReported && hasValidSystemTime()) {
+    timeSyncReported = true;
+    Serial.println("Hora: reloj UTC sincronizado por NTP.");
+  }
+}
+
+bool utcTimestampForElapsed(uint32_t elapsedMs, String& timestamp) {
+  if (!hasValidSystemTime()) return false;
+
+  const uint32_t elapsedSinceReadingMs = millis() - elapsedMs;
+  const time_t observedEpoch = time(nullptr) - elapsedSinceReadingMs / 1000;
+  struct tm utcTime;
+  if (gmtime_r(&observedEpoch, &utcTime) == nullptr) return false;
+
+  char formatted[25];
+  if (strftime(formatted, sizeof(formatted), "%Y-%m-%dT%H:%M:%SZ", &utcTime) == 0) {
+    return false;
+  }
+  timestamp = formatted;
+  return true;
 }
 
 String htmlEscape(const String& value) {
@@ -85,7 +128,8 @@ String statusHtml() {
     return "<p class='ok'><strong>Wi-Fi conectado</strong><br>"
            "Red: " + htmlEscape(WiFi.SSID()) + "<br>"
            "IP local: " + WiFi.localIP().toString() + "<br>"
-           "Señal: " + String(WiFi.RSSI()) + " dBm</p>";
+           "Señal: " + String(WiFi.RSSI()) + " dBm<br>"
+           "Hora UTC: " + String(hasValidSystemTime() ? "sincronizada" : "pendiente") + "</p>";
   }
 
   return "<p class='warning'><strong>Wi-Fi no conectado</strong><br>" +
@@ -167,6 +211,7 @@ void attemptWifiConnection() {
     connectionMessage = "Wi-Fi conectado correctamente.";
     Serial.print("Wi-Fi conectado. IP local: ");
     Serial.println(WiFi.localIP());
+    configureTimeSynchronization();
   } else {
     connectionMessage = "No fue posible conectarse. Revisa el nombre y la contraseña.";
     Serial.println("No fue posible conectar al Wi-Fi guardado.");
@@ -211,7 +256,8 @@ void handleStatus() {
   json += "\"deviceId\":\"" + stableDeviceId + "\",";
   json += "\"accessPoint\":\"" + accessPointName + "\",";
   json += "\"portalIp\":\"" + WiFi.softAPIP().toString() + "\",";
-  json += "\"connected\":" + String(WiFi.status() == WL_CONNECTED ? "true" : "false");
+  json += "\"connected\":" + String(WiFi.status() == WL_CONNECTED ? "true" : "false") + ",";
+  json += "\"timeSynchronized\":" + String(hasValidSystemTime() ? "true" : "false");
 
   if (WiFi.status() == WL_CONNECTED) {
     json += ",\"ssid\":\"" + WiFi.SSID() + "\",";
@@ -256,7 +302,7 @@ void discardLegacyQueueIfPresent() {
   String firstLine = queue.readStringUntil('\n');
   queue.close();
   firstLine.trim();
-  if (firstLine.startsWith("v2,")) return;
+  if (firstLine.startsWith("v2,") || firstLine.startsWith("v3,")) return;
 
   const uint16_t discardedBatches = queuedBatchCount();
   LittleFS.remove(QUEUE_TEMP_PATH);
@@ -281,6 +327,10 @@ void appendMockBatch() {
   // Sustituiremos estos valores por las lecturas TM7711 al conectar sensores.
   const float tankA = clampPercentage(65.0f + 20.0f * sinf(sequence * 0.15f));
   const float tankB = clampPercentage(45.0f + 25.0f * sinf(sequence * 0.10f + 1.0f));
+  const uint32_t elapsedMs = millis();
+  String observedAt;
+  const bool hasObservedAt = utcTimestampForElapsed(elapsedMs, observedAt);
+  const char* timestampQuality = hasObservedAt ? "verified" : "pending";
 
   File queue = LittleFS.open(QUEUE_PATH, FILE_APPEND);
   if (!queue) {
@@ -288,10 +338,12 @@ void appendMockBatch() {
     return;
   }
   queue.printf(
-    "v2,%lu,%lu,%s,%.2f,%.2f\n",
+    "v3,%lu,%lu,%s,%s,%s,%.2f,%.2f\n",
     sequence,
-    millis(),
+    elapsedMs,
     bootSessionId.c_str(),
+    hasObservedAt ? observedAt.c_str() : "-",
+    timestampQuality,
     tankA,
     tankB
   );
@@ -320,10 +372,31 @@ bool parseQueuedBatch(
   unsigned long& sequence,
   unsigned long& elapsedMs,
   String& readingBootSessionId,
+  String& observedAt,
+  String& timestampQuality,
   float& tankA,
   float& tankB
 ) {
   char parsedBootSessionId[80] = {};
+  char parsedObservedAt[32] = {};
+  char parsedTimestampQuality[16] = {};
+  if (sscanf(
+        line.c_str(),
+        "v3,%lu,%lu,%79[^,],%31[^,],%15[^,],%f,%f",
+        &sequence,
+        &elapsedMs,
+        parsedBootSessionId,
+        parsedObservedAt,
+        parsedTimestampQuality,
+        &tankA,
+        &tankB
+      ) == 7) {
+    readingBootSessionId = parsedBootSessionId;
+    observedAt = strcmp(parsedObservedAt, "-") == 0 ? "" : String(parsedObservedAt);
+    timestampQuality = parsedTimestampQuality;
+    return true;
+  }
+
   if (sscanf(
         line.c_str(),
         "v2,%lu,%lu,%79[^,],%f,%f",
@@ -334,6 +407,8 @@ bool parseQueuedBatch(
         &tankB
       ) == 5) {
     readingBootSessionId = parsedBootSessionId;
+    observedAt = "";
+    timestampQuality = "pending";
     return true;
   }
 
@@ -341,6 +416,8 @@ bool parseQueuedBatch(
   // no conservaban su sesión de arranque, por lo que usan la sesión actual.
   if (sscanf(line.c_str(), "%lu,%lu,%f,%f", &sequence, &elapsedMs, &tankA, &tankB) == 4) {
     readingBootSessionId = bootSessionId;
+    observedAt = "";
+    timestampQuality = "pending";
     return true;
   }
 
@@ -385,6 +462,8 @@ String makeReadingsPayload(
   uint32_t sequence,
   uint32_t elapsedMs,
   const String& readingBootSessionId,
+  const String& observedAt,
+  const String& timestampQuality,
   float tankA,
   float tankB
 ) {
@@ -394,14 +473,15 @@ String makeReadingsPayload(
   const float litersB = 408.6f * tankB / 100.0f;
   const float pressureA = (heightA / 100.0f) * 9.80665f;
   const float pressureB = (heightB / 100.0f) * 9.80665f;
-  char payload[850];
+  const String observedAtJson = observedAt.isEmpty() ? "null" : String("\"") + observedAt + "\"";
+  char payload[950];
   snprintf(payload, sizeof(payload),
     "{\"deviceId\":\"%s\",\"bootSessionId\":\"%s\",\"readings\":["
-    "{\"sequence\":%lu,\"sensorId\":\"%s\",\"timestampQuality\":\"pending\",\"elapsedMs\":%lu,\"pressureKpa\":%.3f,\"waterHeightCm\":%.2f,\"percentage\":%.2f,\"liters\":%.2f,\"wifiRssi\":%d},"
-    "{\"sequence\":%lu,\"sensorId\":\"%s\",\"timestampQuality\":\"pending\",\"elapsedMs\":%lu,\"pressureKpa\":%.3f,\"waterHeightCm\":%.2f,\"percentage\":%.2f,\"liters\":%.2f,\"wifiRssi\":%d}]}",
+    "{\"sequence\":%lu,\"sensorId\":\"%s\",\"observedAt\":%s,\"timestampQuality\":\"%s\",\"elapsedMs\":%lu,\"pressureKpa\":%.3f,\"waterHeightCm\":%.2f,\"percentage\":%.2f,\"liters\":%.2f,\"wifiRssi\":%d},"
+    "{\"sequence\":%lu,\"sensorId\":\"%s\",\"observedAt\":%s,\"timestampQuality\":\"%s\",\"elapsedMs\":%lu,\"pressureKpa\":%.3f,\"waterHeightCm\":%.2f,\"percentage\":%.2f,\"liters\":%.2f,\"wifiRssi\":%d}]}",
     stableDeviceId.c_str(), readingBootSessionId.c_str(),
-    sequence, SENSOR_ID_A, elapsedMs, pressureA, heightA, tankA, litersA, WiFi.RSSI(),
-    sequence, SENSOR_ID_B, elapsedMs, pressureB, heightB, tankB, litersB, WiFi.RSSI());
+    sequence, SENSOR_ID_A, observedAtJson.c_str(), timestampQuality.c_str(), elapsedMs, pressureA, heightA, tankA, litersA, WiFi.RSSI(),
+    sequence, SENSOR_ID_B, observedAtJson.c_str(), timestampQuality.c_str(), elapsedMs, pressureB, heightB, tankB, litersB, WiFi.RSSI());
   return String(payload);
 }
 
@@ -421,11 +501,30 @@ void syncFirstQueuedBatch() {
   unsigned long sequence = 0;
   unsigned long elapsedMs = 0;
   String readingBootSessionId;
+  String observedAt;
+  String timestampQuality;
   float tankA = 0;
   float tankB = 0;
-  if (!parseQueuedBatch(line, sequence, elapsedMs, readingBootSessionId, tankA, tankB)) {
+  if (!parseQueuedBatch(
+        line,
+        sequence,
+        elapsedMs,
+        readingBootSessionId,
+        observedAt,
+        timestampQuality,
+        tankA,
+        tankB
+      )) {
     Serial.println("ERROR: entrada inválida en la cola; se conserva.");
     return;
+  }
+
+  if (
+    observedAt.isEmpty() &&
+    readingBootSessionId == bootSessionId &&
+    utcTimestampForElapsed(elapsedMs, observedAt)
+  ) {
+    timestampQuality = "estimated";
   }
 
   WiFiClientSecure client;
@@ -439,7 +538,15 @@ void syncFirstQueuedBatch() {
   http.addHeader("X-Device-Id", stableDeviceId);
   http.addHeader("Authorization", String("Bearer ") + SMARTTANKS_DEVICE_SECRET);
   const int statusCode = http.POST(
-    makeReadingsPayload(sequence, elapsedMs, readingBootSessionId, tankA, tankB)
+    makeReadingsPayload(
+      sequence,
+      elapsedMs,
+      readingBootSessionId,
+      observedAt,
+      timestampQuality,
+      tankA,
+      tankB
+    )
   );
   const String response = http.getString();
   http.end();
@@ -525,6 +632,10 @@ void loop() {
   server.handleClient();
 
   const uint32_t now = millis();
+  if (now - lastTimeStatusAt >= TIME_STATUS_INTERVAL_MS) {
+    lastTimeStatusAt = now;
+    updateTimeSynchronizationStatus();
+  }
   if (now - lastReadingAt >= READING_INTERVAL_MS) {
     lastReadingAt = now;
     appendMockBatch();

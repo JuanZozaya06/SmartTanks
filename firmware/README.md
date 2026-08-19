@@ -15,11 +15,19 @@ Sketch Arduino para la instalación inicial y la primera prueba de telemetría.
 - Genera dos lecturas mock cada 30 segundos, las conserva en una cola LittleFS
   y las envía al API HTTPS real con los `sensorId` estables `pressure-a` y
   `pressure-b`.
+- Al conectarse inicia SNTP con dos servidores NTP. Las muestras tomadas con el
+  reloj sincronizado guardan `observedAt` UTC y `timestampQuality: verified` en
+  la cola antes de intentar enviarse.
+- Si una muestra de la sesión actual se tomó antes de completar NTP, conserva
+  `elapsedMs` y reconstruye su hora al sincronizar, enviándola como `estimated`.
+  Una fila de una sesión anterior sin fecha permanece `pending` para que el
+  backend la trate sin inventar una hora verificada.
 - Borra una fila de la cola únicamente cuando HTTP 202 confirma la misma
   `sequence` para ambos sensores como `created` o `duplicate`.
-- Las filas nuevas conservan su `bootSessionId`. En el primer arranque, el
-  firmware elimina únicamente la cola mock del formato anterior para no enviar
-  telemetría simulada obsoleta; no borra Wi-Fi, secreto ni secuencia persistida.
+- Las filas nuevas usan el formato `v3` y conservan `bootSessionId`, fecha y
+  calidad temporal. El parser continúa aceptando `v2`. En el primer arranque,
+  el firmware elimina únicamente colas mock anteriores a `v2`; no borra Wi-Fi,
+  secreto ni secuencia persistida.
 
 ## ID, PIN y secreto del dispositivo
 
@@ -54,6 +62,10 @@ normalmente.
 4. Con el teléfono, busca la red `SmartTank-XXXX` que aparezca en el Monitor Serial.
 5. Conéctate con la clave temporal impresa en el Monitor Serial y abre `http://192.168.4.1`.
 6. Ingresa las credenciales del Wi-Fi de la casa.
+
+Después de conectarse, el Monitor Serial debe mostrar `Hora: reloj UTC
+sincronizado por NTP.`. El endpoint local `/status` expone
+`timeSynchronized: true` cuando el reloj ya puede producir fechas verificadas.
 
 No envíes la clave Wi-Fi al API. Las llamadas al backend usan HTTPS y validan
 la cadena TLS contra el certificado raíz configurado en `certificates.h`.

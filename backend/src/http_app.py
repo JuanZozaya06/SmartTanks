@@ -699,10 +699,10 @@ def ingest_readings():
         return _json_error("El dispositivo no está asignado a una casa.", 409)
 
     received_at = datetime.now(UTC)
-    elapsed_values = [
+    elapsed_values = {
         item.elapsed_ms for item in payload.readings if item.elapsed_ms is not None
-    ]
-    anchor_elapsed_ms = max(elapsed_values) if elapsed_values else None
+    }
+    anchor_elapsed_ms = max(elapsed_values) if len(elapsed_values) > 1 else None
     refs = [
         db.collection("readings").document(
             f"{identity.device_id}:{item.sequence}:{item.sensor_id}"
