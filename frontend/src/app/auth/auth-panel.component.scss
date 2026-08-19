@@ -10,10 +10,10 @@
   min-height: calc(100vh - 64px);
   margin: 32px auto;
   overflow: hidden;
-  border: 1px solid #d6e1de;
+  border: 1px solid var(--color-border);
   border-radius: 28px;
-  background: #fff;
-  box-shadow: 0 30px 80px rgb(34 71 66 / 10%);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-blue);
 }
 
 .brand-panel,
@@ -25,15 +25,20 @@
 }
 
 .brand-panel {
-  color: #eef9f6;
+  color: var(--color-text);
   background:
-    radial-gradient(circle at 20% 20%, rgb(105 199 181 / 40%), transparent 35%),
-    linear-gradient(145deg, #123d39, #1f7068);
+    radial-gradient(circle at 18% 14%, rgb(0 200 255 / 24%), transparent 32%),
+    radial-gradient(circle at 82% 88%, rgb(5 92 245 / 28%), transparent 40%),
+    linear-gradient(145deg, #061426, #082b52);
+}
+
+.brand-logo {
+  margin-bottom: 38px;
 }
 
 .eyebrow {
   margin: 0 0 12px;
-  color: #63c7b6;
+  color: var(--color-primary-bright);
   font-size: 0.74rem;
   font-weight: 800;
   letter-spacing: 0.18em;
@@ -49,7 +54,7 @@
 
 .brand-panel > p:not(.eyebrow) {
   max-width: 520px;
-  color: #c8e2dc;
+  color: var(--color-text-soft);
   line-height: 1.7;
 }
 
@@ -58,14 +63,14 @@
   align-items: center;
   gap: 12px;
   margin-top: 42px;
-  color: #d7eee9;
+  color: #d5eaff;
   font-size: 0.78rem;
   font-weight: 700;
 }
 
 .brand-panel__flow i {
   width: 28px;
-  border-top: 1px solid #70b9ab;
+  border-top: 1px solid var(--color-primary);
 }
 
 .form-panel {
@@ -77,23 +82,24 @@
   grid-template-columns: 1fr 1fr;
   padding: 4px;
   border-radius: 12px;
-  background: #eef4f2;
+  border: 1px solid var(--color-border);
+  background: rgb(3 13 27 / 72%);
 }
 
 .mode-tabs button {
   padding: 11px;
   border: 0;
   border-radius: 9px;
-  color: #637572;
+  color: var(--color-muted);
   background: transparent;
   font-weight: 750;
   cursor: pointer;
 }
 
 .mode-tabs button.active {
-  color: #174f49;
-  background: #fff;
-  box-shadow: 0 3px 12px rgb(34 71 66 / 9%);
+  color: var(--color-text);
+  background: linear-gradient(135deg, #0c4f91, #076ed4);
+  box-shadow: 0 6px 18px rgb(0 100 224 / 24%);
 }
 
 .form-heading h2 {
@@ -104,7 +110,7 @@
 
 .form-heading p:last-child {
   margin: 0;
-  color: #657672;
+  color: var(--color-muted);
 }
 
 form,
@@ -118,7 +124,7 @@ form {
 }
 
 label {
-  color: #334b47;
+  color: var(--color-text-soft);
   font-size: 0.83rem;
   font-weight: 750;
 }
@@ -127,17 +133,17 @@ input {
   width: 100%;
   box-sizing: border-box;
   padding: 13px 14px;
-  border: 1px solid #cbdad7;
+  border: 1px solid var(--color-border);
   border-radius: 11px;
   outline: none;
-  color: #183a36;
-  background: #fbfdfc;
+  color: var(--color-text);
+  background: rgb(3 12 25 / 78%);
   font: inherit;
 }
 
 input:focus {
-  border-color: #39998c;
-  box-shadow: 0 0 0 3px rgb(57 153 140 / 12%);
+  border-color: var(--color-primary-bright);
+  box-shadow: 0 0 0 3px rgb(0 200 255 / 14%);
 }
 
 .primary-action {
@@ -145,7 +151,8 @@ input:focus {
   border: 0;
   border-radius: 11px;
   color: #fff;
-  background: #1f7068;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-deep));
+  box-shadow: 0 12px 28px rgb(0 100 230 / 25%);
   font-weight: 800;
   cursor: pointer;
 }
@@ -157,7 +164,7 @@ input:focus {
 
 .form-error {
   margin: 0;
-  color: #b54838;
+  color: var(--color-danger);
   font-size: 0.84rem;
 }
 

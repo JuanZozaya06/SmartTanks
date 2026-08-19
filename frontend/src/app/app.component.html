@@ -1,6 +1,9 @@
 @if (auth.user() === undefined || contextStatus() === 'loading') {
   <main class="app-state">
     <div>
+      <div class="brand-logo brand-logo--compact">
+        <img src="smarttanks-logo-dark-compact.png" alt="SmartTanks" />
+      </div>
       <h1>Cargando SmartTanks</h1>
       <p>Validando tu sesión y configuración.</p>
     </div>
@@ -10,6 +13,9 @@
 } @else if (contextStatus() === 'error') {
   <main class="app-state">
     <div>
+      <div class="brand-logo brand-logo--compact">
+        <img src="smarttanks-logo-dark-compact.png" alt="SmartTanks" />
+      </div>
       <h1>No pudimos cargar tu cuenta</h1>
       <p>Comprueba la conexión e intenta nuevamente.</p>
       <button type="button" (click)="loadContext()">Reintentar</button>

@@ -22,13 +22,15 @@ import { HomeSetupComponent } from './onboarding/home-setup.component';
       text-align: center;
     }
     .app-state h1 { margin: 0 0 10px; letter-spacing: -0.04em; }
-    .app-state p { margin: 0 0 20px; color: #637572; }
+    .app-state .brand-logo { margin-inline: auto; }
+    .app-state p { margin: 0 0 20px; color: var(--color-muted); }
     .app-state button {
       padding: 11px 16px;
       border: 0;
       border-radius: 10px;
       color: #fff;
-      background: #1f7068;
+      background: linear-gradient(135deg, var(--color-primary), var(--color-primary-deep));
+      box-shadow: 0 10px 26px rgb(0 100 230 / 22%);
       font-weight: 800;
       cursor: pointer;
     }

@@ -21,7 +21,7 @@ footer,
 .eyebrow,
 .tank-number {
   margin: 0 0 8px;
-  color: #237b72;
+  color: var(--color-primary-bright);
   font-size: 0.74rem;
   font-weight: 800;
   letter-spacing: 0.16em;
@@ -44,7 +44,7 @@ header p:last-child,
 .section-heading p,
 footer p {
   margin-bottom: 0;
-  color: #667975;
+  color: var(--color-muted);
 }
 
 form {
@@ -56,9 +56,10 @@ form {
 .home-card,
 .tank-section {
   padding: 28px;
-  border: 1px solid #d6e1de;
+  border: 1px solid var(--color-border);
   border-radius: 22px;
-  background: rgb(255 255 255 / 84%);
+  background: linear-gradient(145deg, rgb(11 29 51 / 94%), rgb(5 18 34 / 94%));
+  box-shadow: var(--shadow-blue);
 }
 
 .section-heading {
@@ -73,7 +74,8 @@ form {
   place-items: center;
   border-radius: 50%;
   color: #fff;
-  background: #1f7068;
+  background: linear-gradient(135deg, var(--color-primary-bright), var(--color-primary-deep));
+  box-shadow: 0 8px 22px rgb(0 111 245 / 28%);
   font-weight: 800;
 }
 
@@ -98,13 +100,13 @@ form {
   gap: 16px;
   padding: 22px;
   border-radius: 16px;
-  background: #f1f6f4;
+  background: var(--color-surface);
 }
 
 label {
   display: grid;
   gap: 8px;
-  color: #334b47;
+  color: var(--color-text-soft);
   font-size: 0.8rem;
   font-weight: 750;
 }
@@ -113,17 +115,17 @@ input {
   width: 100%;
   box-sizing: border-box;
   padding: 12px 13px;
-  border: 1px solid #c5d7d3;
+  border: 1px solid var(--color-border);
   border-radius: 10px;
   outline: none;
-  color: #183a36;
-  background: #fff;
+  color: var(--color-text);
+  background: rgb(3 12 25 / 78%);
   font: inherit;
 }
 
 input:focus {
-  border-color: #39998c;
-  box-shadow: 0 0 0 3px rgb(57 153 140 / 12%);
+  border-color: var(--color-primary-bright);
+  box-shadow: 0 0 0 3px rgb(0 200 255 / 14%);
 }
 
 .capacity-row {
@@ -143,10 +145,10 @@ button {
 .calculate,
 .text-action {
   padding: 11px 14px;
-  border: 1px solid #bcd2cd;
+  border: 1px solid var(--color-border-strong);
   border-radius: 9px;
-  color: #1f6761;
-  background: #fff;
+  color: var(--color-primary-bright);
+  background: var(--color-surface-raised);
 }
 
 footer {
@@ -157,7 +159,8 @@ footer {
   padding: 14px 20px;
   border-radius: 11px;
   color: #fff;
-  background: #1f7068;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-deep));
+  box-shadow: 0 10px 28px rgb(0 100 230 / 24%);
 }
 
 .primary-action:disabled {
@@ -167,7 +170,7 @@ footer {
 
 .form-error {
   margin: 0;
-  color: #b54838;
+  color: var(--color-danger);
   font-weight: 700;
 }
 

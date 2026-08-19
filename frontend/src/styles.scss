@@ -1,8 +1,25 @@
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap');
 
 :root {
-  color: #173b37;
-  background: #f4f8f7;
+  --color-background: #030914;
+  --color-background-deep: #01050c;
+  --color-surface: #071526;
+  --color-surface-raised: #0b1d33;
+  --color-surface-soft: #0d2540;
+  --color-border: #173b60;
+  --color-border-strong: #235789;
+  --color-text: #edf7ff;
+  --color-text-soft: #b7cbe0;
+  --color-muted: #829bb3;
+  --color-primary: #008cff;
+  --color-primary-bright: #00c8ff;
+  --color-primary-deep: #075cf5;
+  --color-success: #37dfb3;
+  --color-warning: #ffbd63;
+  --color-danger: #ff7d91;
+  --shadow-blue: 0 26px 70px rgb(0 82 180 / 18%);
+  color: var(--color-text);
+  background: var(--color-background);
   font-family: 'Manrope', system-ui, sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -17,13 +34,55 @@ body {
   min-height: 100vh;
   margin: 0;
   background:
-    radial-gradient(circle at 84% 2%, rgb(102 199 193 / 14%), transparent 28rem),
-    #f4f8f7;
+    radial-gradient(circle at 82% -8%, rgb(0 140 255 / 18%), transparent 34rem),
+    radial-gradient(circle at 10% 42%, rgb(0 200 255 / 7%), transparent 30rem),
+    linear-gradient(155deg, var(--color-background) 0%, var(--color-background-deep) 100%);
+  color-scheme: dark;
 }
 
 button,
 input {
   font: inherit;
+}
+
+input::placeholder {
+  color: #627d98;
+}
+
+::selection {
+  color: #fff;
+  background: #075cf5;
+}
+
+button,
+a,
+input {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible {
+  outline: 3px solid rgb(0 200 255 / 35%);
+  outline-offset: 2px;
+}
+
+.brand-logo {
+  width: min(270px, 64vw);
+  aspect-ratio: 4.33;
+  overflow: hidden;
+}
+
+.brand-logo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.brand-logo--compact {
+  width: 188px;
+  margin-bottom: 22px;
 }
 
 .tank-empty {
@@ -32,16 +91,16 @@ input {
 
 .form-error {
   margin: 10px 0 0;
-  color: #b54838;
+  color: var(--color-danger);
   font-weight: 700;
 }
 
 .tank-configuration {
   margin-top: 20px;
   padding: 18px;
-  border: 1px solid #d6e1de;
+  border: 1px solid var(--color-border);
   border-radius: 16px;
-  background: #f7faf9;
+  background: rgb(4 16 31 / 68%);
 }
 
 .tank-configuration__fields {
@@ -53,7 +112,7 @@ input {
 .tank-configuration label {
   display: grid;
   gap: 6px;
-  color: #365d58;
+  color: var(--color-text-soft);
   font-size: 0.78rem;
   font-weight: 800;
 }
@@ -62,10 +121,10 @@ input {
   width: 100%;
   min-width: 0;
   padding: 11px 12px;
-  border: 1px solid #bcd0cc;
+  border: 1px solid var(--color-border-strong);
   border-radius: 10px;
-  color: #173b37;
-  background: #fff;
+  color: var(--color-text);
+  background: var(--color-surface);
 }
 
 .calibration-help {
@@ -74,7 +133,8 @@ input {
   margin-top: 16px;
   padding: 14px;
   border-radius: 12px;
-  background: #eaf3f1;
+  border: 1px solid rgb(0 140 255 / 18%);
+  background: rgb(0 116 219 / 10%);
 }
 
 .calibration-help p,
