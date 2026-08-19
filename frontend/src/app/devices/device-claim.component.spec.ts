@@ -15,7 +15,6 @@ describe('DeviceClaimComponent', () => {
           label: 'SmartTank del patio',
           status: 'active',
           firmwareVersion: null,
-          channels: [],
           lastSeenAt: null,
           claimedAt: '2026-08-19T12:00:00Z',
         },

@@ -7,6 +7,7 @@ import {
   AppContext,
   DeviceSummary,
   HomeSetupRequest,
+  TankConfiguration,
 } from './models';
 import { runtimeConfig } from './runtime-config';
 
@@ -53,6 +54,18 @@ export class ApiService {
         this.http.post<{ device: DeviceSummary }>(
           `${this.baseUrl}/v1/homes/${encodeURIComponent(homeId)}/devices/claim`,
           { deviceId, setupPin, label },
+          { headers },
+        ),
+      ),
+    );
+  }
+
+  renameTank(homeId: string, tankId: string, name: string) {
+    return this.authorizationHeaders().pipe(
+      switchMap((headers) =>
+        this.http.patch<{ tank: TankConfiguration }>(
+          `${this.baseUrl}/v1/homes/${encodeURIComponent(homeId)}/tanks/${encodeURIComponent(tankId)}`,
+          { name },
           { headers },
         ),
       ),

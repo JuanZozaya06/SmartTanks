@@ -1,18 +1,26 @@
 import { Injectable, inject } from '@angular/core';
-import { DocumentData, Unsubscribe, doc, onSnapshot } from 'firebase/firestore';
+import { DocumentData, Unsubscribe, collection, onSnapshot } from 'firebase/firestore';
 
 import { FirebaseService } from './firebase.service';
 
 export interface RealtimeTankState {
   tankId: string;
-  percentage: number;
-  liters: number;
-  waterHeightCm: number;
+  deviceId: string;
+  sensorId: string;
+  name: string;
+  configurationStatus: 'pending' | 'configured';
+  status: 'active' | 'inactive';
+  percentage: number | null;
+  liters: number | null;
+  waterHeightCm: number | null;
+  pressureKpa: number | null;
+  capacityLiters: number | null;
+  lowLevelPercentage: number;
   updatedAt: Date;
 }
 
-function numericValue(value: unknown, fallback = 0): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+function numericValue(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
 function dateValue(value: unknown): Date {
@@ -38,16 +46,34 @@ function dateValue(value: unknown): Date {
 }
 
 export function mapTankState(tankId: string, data: DocumentData): RealtimeTankState | null {
+  const deviceId = data['deviceId'];
+  const sensorId = data['sensorId'];
   const latestReading = data['latestReading'];
-  if (!latestReading || typeof latestReading !== 'object') {
+  if (
+    typeof deviceId !== 'string' ||
+    typeof sensorId !== 'string' ||
+    !latestReading ||
+    typeof latestReading !== 'object'
+  ) {
     return null;
   }
 
   return {
     tankId,
+    deviceId,
+    sensorId,
+    name:
+      typeof data['name'] === 'string' && data['name'].trim()
+        ? data['name']
+        : `Tanque ${sensorId}`,
+    configurationStatus: data['configurationStatus'] === 'configured' ? 'configured' : 'pending',
+    status: data['status'] === 'inactive' ? 'inactive' : 'active',
     percentage: numericValue(latestReading['percentage']),
     liters: numericValue(latestReading['liters']),
     waterHeightCm: numericValue(latestReading['waterHeightCm']),
+    pressureKpa: numericValue(latestReading['pressureKpa']),
+    capacityLiters: numericValue(data['capacityLiters']),
+    lowLevelPercentage: numericValue(data['lowLevelPercentage']) ?? 25,
     updatedAt: dateValue(latestReading['receivedAt'] ?? data['lastCommunicationAt']),
   };
 }
@@ -58,15 +84,20 @@ export class TankRealtimeService {
 
   listen(
     homeId: string,
-    tankId: string,
-    next: (state: RealtimeTankState | null) => void,
+    next: (states: RealtimeTankState[]) => void,
     error: (cause: Error) => void,
   ): Unsubscribe {
-    const tankReference = doc(this.firebase.firestore, 'homes', homeId, 'tanks', tankId);
+    const tanksReference = collection(this.firebase.firestore, 'homes', homeId, 'tanks');
 
     return onSnapshot(
-      tankReference,
-      (snapshot) => next(snapshot.exists() ? mapTankState(tankId, snapshot.data()) : null),
+      tanksReference,
+      (snapshot) => {
+        const states = snapshot.docs
+          .map((document) => mapTankState(document.id, document.data()))
+          .filter((state): state is RealtimeTankState => state !== null)
+          .sort((left, right) => left.tankId.localeCompare(right.tankId));
+        next(states);
+      },
       error,
     );
   }

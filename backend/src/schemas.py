@@ -12,7 +12,7 @@ class ApiModel(BaseModel):
 
 class TankReading(ApiModel):
     sequence: int = Field(ge=0)
-    tank_channel: str = Field(alias="tankChannel", min_length=1, max_length=16)
+    sensor_id: str = Field(alias="sensorId", pattern=r"^[a-z0-9][a-z0-9_-]{0,31}$")
     observed_at: datetime | None = Field(default=None, alias="observedAt")
     timestamp_quality: Literal["verified", "estimated", "pending"] = Field(alias="timestampQuality")
     elapsed_ms: int | None = Field(default=None, alias="elapsedMs", ge=0)
@@ -56,28 +56,25 @@ class DeviceEvent(ApiModel):
     metadata: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
 
 
-class TankSetup(ApiModel):
-    name: str = Field(min_length=1, max_length=80)
-    shape: Literal["cylinder"] = "cylinder"
-    height_cm: float = Field(alias="heightCm", gt=0, le=1000)
-    diameter_cm: float = Field(alias="diameterCm", gt=0, le=1000)
-    capacity_liters: float = Field(alias="capacityLiters", gt=0, le=100000)
-    low_level_percentage: float = Field(
-        default=25,
-        alias="lowLevelPercentage",
-        ge=0,
-        le=100,
-    )
-
-
 class HomeSetup(ApiModel):
     name: str = Field(min_length=1, max_length=100)
     timezone: str = Field(min_length=1, max_length=100)
     display_name: str | None = Field(default=None, alias="displayName", max_length=100)
-    tanks: list[TankSetup] = Field(min_length=1, max_length=2)
 
 
 class DeviceClaim(ApiModel):
     device_id: str = Field(alias="deviceId", pattern=r"^smarttank-[a-f0-9]{12}$")
     setup_pin: str = Field(alias="setupPin", pattern=r"^[0-9]{8}$")
     label: str = Field(min_length=1, max_length=80)
+
+
+class TankUpdate(ApiModel):
+    name: str = Field(min_length=1, max_length=80)
+
+    @field_validator("name")
+    @classmethod
+    def require_visible_name(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("name no puede estar vacío")
+        return stripped

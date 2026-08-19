@@ -84,7 +84,11 @@ class FakeFirestore:
         return FakeCollectionReference(self, name)
 
     def get_all(self, references):
-        return [FakeSnapshot(reference.id) for reference in references]
+        snapshots = []
+        for reference in references:
+            data = self.documents.get(reference.path)
+            snapshots.append(FakeSnapshot(reference.id, data is not None, data))
+        return snapshots
 
     def batch(self):
         return self.write_batch
@@ -97,17 +101,27 @@ def test_health_endpoint() -> None:
     assert response.get_json() == {"service": "smart-tanks-api", "status": "ok"}
 
 
+def test_github_pages_origin_is_allowed() -> None:
+    response = app.test_client().options(
+        "/v1/homes/home_01/tanks/tank_01",
+        headers={
+            "Origin": "https://juanzozaya06.github.io",
+            "Access-Control-Request-Method": "PATCH",
+        },
+    )
+
+    assert response.status_code == 204
+    assert response.headers["Access-Control-Allow-Origin"] == (
+        "https://juanzozaya06.github.io"
+    )
+    assert "PATCH" in response.headers["Access-Control-Allow-Methods"]
+
+
 def test_reading_batch_updates_history_and_latest_tank_state(monkeypatch) -> None:
     database = FakeFirestore()
     identity = DeviceIdentity(
         device_id="dev_01",
-        data={
-            "homeId": "home_01",
-            "channels": [
-                {"channel": "A", "tankId": "tank_1"},
-                {"channel": "B", "tankId": "tank_2"},
-            ],
-        },
+        data={"homeId": "home_01"},
     )
     monkeypatch.setattr("src.http_app.get_firestore_client", lambda: database)
     monkeypatch.setattr("src.http_app.require_device", lambda request, db: identity)
@@ -120,7 +134,7 @@ def test_reading_batch_updates_history_and_latest_tank_state(monkeypatch) -> Non
             "readings": [
                 {
                     "sequence": 41,
-                    "tankChannel": "A",
+                    "sensorId": "pressure-a",
                     "observedAt": "2026-08-18T15:19:30Z",
                     "timestampQuality": "verified",
                     "pressureKpa": 13.1,
@@ -129,7 +143,7 @@ def test_reading_batch_updates_history_and_latest_tank_state(monkeypatch) -> Non
                 },
                 {
                     "sequence": 42,
-                    "tankChannel": "A",
+                    "sensorId": "pressure-a",
                     "observedAt": "2026-08-18T15:20:00Z",
                     "timestampQuality": "verified",
                     "pressureKpa": 13.4,
@@ -138,7 +152,7 @@ def test_reading_batch_updates_history_and_latest_tank_state(monkeypatch) -> Non
                 },
                 {
                     "sequence": 42,
-                    "tankChannel": "B",
+                    "sensorId": "pressure-b",
                     "observedAt": "2026-08-18T15:20:00Z",
                     "timestampQuality": "verified",
                     "pressureKpa": 6.7,
@@ -153,8 +167,9 @@ def test_reading_batch_updates_history_and_latest_tank_state(monkeypatch) -> Non
     assert database.write_batch.committed
     assert len(database.write_batch.creates) == 3
     assert [reference.path for reference, _, _ in database.write_batch.sets] == [
-        "homes/home_01/tanks/tank_1",
-        "homes/home_01/tanks/tank_2",
+        "homes/home_01/tanks/dev_01:pressure-a",
+        "homes/home_01/tanks/dev_01:pressure-b",
+        "devices/dev_01",
     ]
     tank_1_state = database.write_batch.sets[0][1]
     assert database.write_batch.sets[0][2] is True
@@ -162,7 +177,41 @@ def test_reading_batch_updates_history_and_latest_tank_state(monkeypatch) -> Non
     assert tank_1_state["latestReading"]["liters"] == 276
 
 
-def test_authenticated_user_can_create_home_and_tanks(monkeypatch) -> None:
+def test_reading_keeps_the_custom_name_of_an_existing_sensor(monkeypatch) -> None:
+    tank_path = "homes/home_01/tanks/dev_01:pressure-a"
+    database = FakeFirestore(
+        {
+            tank_path: {
+                "deviceId": "dev_01",
+                "sensorId": "pressure-a",
+                "name": "Tanque del patio",
+            }
+        }
+    )
+    identity = DeviceIdentity(device_id="dev_01", data={"homeId": "home_01"})
+    monkeypatch.setattr("src.http_app.get_firestore_client", lambda: database)
+    monkeypatch.setattr("src.http_app.require_device", lambda request, db: identity)
+
+    response = app.test_client().post(
+        "/v1/device/readings/batch",
+        json={
+            "deviceId": "dev_01",
+            "readings": [
+                {
+                    "sequence": 43,
+                    "sensorId": "pressure-a",
+                    "timestampQuality": "pending",
+                    "pressureKpa": 13.5,
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 202
+    assert "name" not in database.write_batch.sets[0][1]
+
+
+def test_authenticated_user_can_create_home_without_tanks(monkeypatch) -> None:
     database = FakeFirestore()
     monkeypatch.setattr("src.http_app.get_firestore_client", lambda: database)
     monkeypatch.setattr(
@@ -180,22 +229,6 @@ def test_authenticated_user_can_create_home_and_tanks(monkeypatch) -> None:
             "name": "Mi casa",
             "timezone": "America/Caracas",
             "displayName": "Zozi",
-            "tanks": [
-                {
-                    "name": "Tanque principal",
-                    "heightCm": 200,
-                    "diameterCm": 51,
-                    "capacityLiters": 408,
-                    "lowLevelPercentage": 25,
-                },
-                {
-                    "name": "Tanque auxiliar",
-                    "heightCm": 200,
-                    "diameterCm": 51,
-                    "capacityLiters": 408,
-                    "lowLevelPercentage": 30,
-                },
-            ],
         },
     )
 
@@ -203,14 +236,12 @@ def test_authenticated_user_can_create_home_and_tanks(monkeypatch) -> None:
     body = response.get_json()
     assert body["home"]["id"] == "home_generated"
     assert body["home"]["role"] == "owner"
-    assert [tank["id"] for tank in body["tanks"]] == ["tank_1", "tank_2"]
+    assert body["tanks"] == []
     assert database.write_batch.committed
     assert [reference.path for reference, _, _ in database.write_batch.sets] == [
         "homes/home_generated",
         "homes/home_generated/members/user_01",
         "users/user_01",
-        "homes/home_generated/tanks/tank_1",
-        "homes/home_generated/tanks/tank_2",
     ]
 
 
@@ -227,7 +258,9 @@ def test_user_context_returns_active_home(monkeypatch) -> None:
                 "timezone": "America/Caracas",
             },
             "homes/home_01/members/user_01": {"role": "owner"},
-            "homes/home_01/tanks/tank_1": {
+            "homes/home_01/tanks/smarttank-84f703123456:pressure-a": {
+                "deviceId": "smarttank-84f703123456",
+                "sensorId": "pressure-a",
                 "name": "Tanque principal",
                 "shape": "cylinder",
                 "heightCm": 200,
@@ -253,17 +286,43 @@ def test_user_context_returns_active_home(monkeypatch) -> None:
         "timezone": "America/Caracas",
         "role": "owner",
     }
-    assert body["tanks"][0]["id"] == "tank_1"
+    assert body["tanks"][0]["id"] == "smarttank-84f703123456:pressure-a"
 
 
-def test_owner_can_claim_factory_device_and_map_tank_channels(monkeypatch) -> None:
+def test_owner_can_rename_a_discovered_tank(monkeypatch) -> None:
+    tank_id = "smarttank-84f703123456:pressure-a"
+    database = FakeFirestore(
+        {
+            "users/user_01": {"activeHomeId": "home_01"},
+            "homes/home_01/members/user_01": {"role": "owner"},
+            f"homes/home_01/tanks/{tank_id}": {
+                "deviceId": "smarttank-84f703123456",
+                "sensorId": "pressure-a",
+                "name": "Tanque pressure-a",
+                "status": "active",
+            },
+        }
+    )
+    monkeypatch.setattr("src.http_app.get_firestore_client", lambda: database)
+    monkeypatch.setattr("src.http_app.require_user", lambda request: {"uid": "user_01"})
+
+    response = app.test_client().patch(
+        f"/v1/homes/home_01/tanks/{tank_id}",
+        json={"name": "Tanque del patio"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["tank"]["name"] == "Tanque del patio"
+    assert database.write_batch.sets[0][1]["name"] == "Tanque del patio"
+    assert database.write_batch.creates[0][1]["action"] == "tank_renamed"
+
+
+def test_owner_can_claim_factory_device_without_precreated_tanks(monkeypatch) -> None:
     credentials = create_factory_credentials("smarttank-84f703123456")
     database = FakeFirestore(
         {
             "users/user_01": {"activeHomeId": "home_01"},
             "homes/home_01/members/user_01": {"role": "owner"},
-            "homes/home_01/tanks/tank_1": {"name": "Principal"},
-            "homes/home_01/tanks/tank_2": {"name": "Auxiliar"},
             f"devices/{credentials.device_id}": {
                 "status": "unclaimed",
                 "deviceSecretHash": credentials.device_secret_hash,
@@ -290,8 +349,5 @@ def test_owner_can_claim_factory_device_and_map_tank_channels(monkeypatch) -> No
     assert claimed_update["status"] == "active"
     assert claimed_update["homeId"] == "home_01"
     assert claimed_update["label"] == "SmartTank del patio"
-    assert claimed_update["channels"] == [
-        {"channel": "A", "tankId": "tank_1"},
-        {"channel": "B", "tankId": "tank_2"},
-    ]
+    assert "channels" not in claimed_update
     assert "setupPinHash" not in claimed_update

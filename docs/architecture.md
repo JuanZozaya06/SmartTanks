@@ -21,13 +21,13 @@ homes/{homeId}
 homes/{homeId}/members/{userId}
 homes/{homeId}/tanks/{tankId}
 devices/{deviceId}
-readings/{deviceId}:{sequence}:{channel}
+readings/{deviceId}:{sequence}:{sensorId}
 deviceEvents/{deviceId}:{bootSessionId}:{sequence}:{eventType}
 ```
 
-El identificador de lectura incluye el canal porque un mismo ciclo/`sequence` puede producir una lectura A y otra B. Un reintento devuelve `duplicate` y se considera confirmado, pero no sobrescribe la primera lectura guardada.
+El identificador de lectura incluye `sensorId` porque un mismo ciclo/`sequence` puede producir datos de varios sensores. Cada ESP32 tiene un solo `deviceId`; sus sensores usan identificadores lógicos estables como `pressure-a`. Un reintento devuelve `duplicate` y se considera confirmado, pero no sobrescribe la primera lectura guardada.
 
-Cada documento `homes/{homeId}/tanks/{tankId}` conserva la configuración del tanque y un campo `latestReading` con su estado actual. La API crea las lecturas históricas y actualiza una sola vez cada tanque afectado dentro del mismo batch de Firestore. Angular escucha estos documentos con `onSnapshot()`; no realiza polling periódico.
+`POST /v1/homes` no crea tanques. La primera lectura autenticada de cada combinación `deviceId + sensorId` crea `homes/{homeId}/tanks/{deviceId}:{sensorId}` con `configurationStatus: pending`, nombre referencial y `latestReading`. La API crea el histórico y actualiza el tanque dentro del mismo batch. Angular escucha la colección completa con `onSnapshot()`, por lo que descubre sensores nuevos sin recargar ni hacer polling.
 
 ```text
 API crea readings/{id} ─┐
@@ -54,7 +54,7 @@ registro/login con correo y contraseña
        ▼                  ▼
 POST /v1/homes        dashboard + onSnapshot()
        │
-       └─ crea usuario, casa, owner y tanques en un batch
+       └─ crea usuario, casa y owner en un batch; tanks queda vacío
 ```
 
 El frontend no guarda un `homeId` manual ni contiene lecturas ficticias. Firebase Auth conserva la sesión; al recargar, Angular obtiene un token nuevo y reconstruye el contexto desde la API.
@@ -68,12 +68,12 @@ medir ambos sensores
 POST /v1/device/readings/batch
         │
         ├─ validar deviceId + secreto
-        ├─ validar canales asignados
+        ├─ validar sensorId estable
         ├─ detectar documentos ya existentes
-        └─ crear solo los nuevos
+        └─ crear lectura y descubrir tanque si es necesario
                     │
                     ▼
-      responder cada sequence + channel
+      responder cada sequence + sensorId
                     │
                     ▼
  ESP32 elimina únicamente los confirmados
@@ -90,7 +90,7 @@ fabricación ─► devices/{deviceId}, status unclaimed
 usuario final ─ deviceId + PIN + nombre referencial
                 │
                 ▼
-POST devices/claim ─► homeId + label + canales A/B + status active
+POST devices/claim ─► homeId + label + status active
 ```
 
 - El secreto tiene alta entropía y en Firestore solo queda su SHA-256.
@@ -101,6 +101,8 @@ POST devices/claim ─► homeId + label + canales A/B + status active
 - El usuario final no genera ni ve el secreto individual del equipo.
 - El `deviceId` tiene el formato `smarttank-<12 hex>` y se deriva de la eFuse/MAC de fábrica del ESP32. Es público; el secreto es la credencial.
 - Se usa la MAC completa, no solo los últimos ocho hexadecimales, para reducir colisiones.
+- El claim no crea tanques ni asigna canales. Los tanques aparecen solo después de mediciones reales.
+- El usuario puede cambiar el nombre de un tanque descubierto con `PATCH /v1/homes/{homeId}/tanks/{tankId}`; la identidad técnica `deviceId + sensorId` no cambia.
 - El auto-registro en el primer arranque no está aprobado. Si se implementa, debe autenticar el alta mediante una credencial de bootstrap y, cuando el registro ya exista, verificar el secreto individual en vez de ignorar ciegamente la solicitud.
 
 ## Tiempo y cortes
@@ -124,7 +126,7 @@ Cloud Functions requiere Blaze y una cuenta de facturación. Deben configurarse 
 3. Implementar transferencia y rotación de credenciales.
 4. Añadir App Check al panel.
 5. Añadir rutas autenticadas de histórico y estadísticas.
-6. Probar reglas con `@firebase/rules-unit-testing` en el emulador.
+6. Incorporar validación automatizada de reglas sin ejecutar casos destructivos contra producción.
 7. Configurar retención o agregación de históricos antes de crecer; TTL no entra en la cuota gratuita.
 
 ## Decisiones de producto aún abiertas

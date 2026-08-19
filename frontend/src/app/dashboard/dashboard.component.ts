@@ -7,17 +7,8 @@ import { AppContext, DeviceSummary } from '../core/models';
 import { RealtimeTankState, TankRealtimeService } from '../core/tank-realtime.service';
 import { DeviceClaimComponent } from '../devices/device-claim.component';
 
-interface TankSummary {
-  id: string;
-  name: string;
-  percentage: number;
-  liters: number;
-  capacityLiters: number;
-  levelCm: number;
-  updatedAt: Date;
-  lowLevelPercentage: number;
-  state: 'normal' | 'low';
-  hasReading: boolean;
+interface TankSummary extends RealtimeTankState {
+  state: 'normal' | 'low' | 'unknown';
 }
 
 @Component({
@@ -30,7 +21,7 @@ export class DashboardComponent implements OnInit {
   private readonly api = inject(ApiService);
   private readonly realtime = inject(TankRealtimeService);
   private readonly destroyRef = inject(DestroyRef);
-  private readonly tankUnsubscribers: Array<() => void> = [];
+  private tankUnsubscriber?: () => void;
 
   readonly context = input.required<AppContext>();
   readonly logout = output<void>();
@@ -39,15 +30,24 @@ export class DashboardComponent implements OnInit {
   readonly tanks = signal<TankSummary[]>([]);
   readonly devices = signal<DeviceSummary[]>([]);
   readonly showDeviceSetup = signal(false);
+  readonly editingTankId = signal<string | null>(null);
+  readonly tankNameDraft = signal('');
+  readonly savingTankId = signal<string | null>(null);
+  readonly tankRenameError = signal<string | null>(null);
   readonly combinedPercentage = computed(() => {
-    const measured = this.tanks().filter((tank) => tank.hasReading);
+    const measured = this.tanks().filter((tank) => tank.percentage !== null);
     return measured.length
-      ? Math.round(measured.reduce((total, tank) => total + tank.percentage, 0) / measured.length)
-      : 0;
+      ? Math.round(
+          measured.reduce((total, tank) => total + (tank.percentage ?? 0), 0) / measured.length,
+        )
+      : null;
   });
-  readonly availableLiters = computed(() =>
-    Math.round(this.tanks().reduce((total, tank) => total + tank.liters, 0)),
-  );
+  readonly availableLiters = computed(() => {
+    const measured = this.tanks().filter((tank) => tank.liters !== null);
+    return measured.length
+      ? Math.round(measured.reduce((total, tank) => total + (tank.liters ?? 0), 0))
+      : null;
+  });
 
   constructor() {
     this.destroyRef.onDestroy(() => this.stopTankListeners());
@@ -55,26 +55,11 @@ export class DashboardComponent implements OnInit {
 
   ngOnInit(): void {
     const context = this.context();
-    this.tanks.set(
-      context.tanks.map((tank) => ({
-        id: tank.id,
-        name: tank.name,
-        percentage: 0,
-        liters: 0,
-        capacityLiters: tank.capacityLiters,
-        levelCm: 0,
-        updatedAt: new Date(0),
-        lowLevelPercentage: tank.lowLevelPercentage,
-        state: 'low',
-        hasReading: false,
-      })),
-    );
-
     this.api.health().subscribe({
       next: () => this.apiStatus.set('online'),
       error: () => this.apiStatus.set('offline'),
     });
-    this.startTankListeners(context.home!.id, context.tanks.map((tank) => tank.id));
+    this.startTankListener(context.home!.id);
     void this.loadDevices(context.home!.id);
   }
 
@@ -86,6 +71,40 @@ export class DashboardComponent implements OnInit {
     this.showDeviceSetup.set(false);
   }
 
+  startRename(tank: TankSummary): void {
+    this.editingTankId.set(tank.tankId);
+    this.tankNameDraft.set(tank.name);
+    this.tankRenameError.set(null);
+  }
+
+  cancelRename(): void {
+    this.editingTankId.set(null);
+    this.tankNameDraft.set('');
+    this.tankRenameError.set(null);
+  }
+
+  async saveTankName(tank: TankSummary): Promise<void> {
+    const name = this.tankNameDraft().trim();
+    if (!name) {
+      this.tankRenameError.set('Escribe un nombre para el tanque.');
+      return;
+    }
+
+    this.savingTankId.set(tank.tankId);
+    this.tankRenameError.set(null);
+    try {
+      await firstValueFrom(this.api.renameTank(this.context().home!.id, tank.tankId, name));
+      this.tanks.update((tanks) =>
+        tanks.map((current) => (current.tankId === tank.tankId ? { ...current, name } : current)),
+      );
+      this.cancelRename();
+    } catch {
+      this.tankRenameError.set('No fue posible guardar el nombre.');
+    } finally {
+      this.savingTankId.set(null);
+    }
+  }
+
   private async loadDevices(homeId: string): Promise<void> {
     try {
       const response = await firstValueFrom(this.api.devices(homeId));
@@ -95,50 +114,30 @@ export class DashboardComponent implements OnInit {
     }
   }
 
-  private startTankListeners(homeId: string, tankIds: string[]): void {
-    const initialized = new Set<string>();
+  private startTankListener(homeId: string): void {
     this.realtimeStatus.set('connecting');
-
-    for (const tankId of tankIds) {
-      const unsubscribe = this.realtime.listen(
-        homeId,
-        tankId,
-        (state) => {
-          initialized.add(tankId);
-          if (state) {
-            this.updateTank(state);
-          }
-          if (initialized.size === tankIds.length) {
-            this.realtimeStatus.set('live');
-          }
-        },
-        () => this.realtimeStatus.set('error'),
-      );
-      this.tankUnsubscribers.push(unsubscribe);
-    }
-  }
-
-  private updateTank(state: RealtimeTankState): void {
-    this.tanks.update((tanks) =>
-      tanks.map((tank) =>
-        tank.id === state.tankId
-          ? {
-              ...tank,
-              percentage: state.percentage,
-              liters: state.liters,
-              levelCm: state.waterHeightCm,
-              updatedAt: state.updatedAt,
-              state: state.percentage <= tank.lowLevelPercentage ? 'low' : 'normal',
-              hasReading: true,
-            }
-          : tank,
-      ),
+    this.tankUnsubscriber = this.realtime.listen(
+      homeId,
+      (states) => {
+        this.tanks.set(
+          states.map((state) => ({
+            ...state,
+            state:
+              state.percentage === null
+                ? 'unknown'
+                : state.percentage <= state.lowLevelPercentage
+                  ? 'low'
+                  : 'normal',
+          })),
+        );
+        this.realtimeStatus.set('live');
+      },
+      () => this.realtimeStatus.set('error'),
     );
   }
 
   private stopTankListeners(): void {
-    for (const unsubscribe of this.tankUnsubscribers.splice(0)) {
-      unsubscribe();
-    }
+    this.tankUnsubscriber?.();
+    this.tankUnsubscriber = undefined;
   }
 }

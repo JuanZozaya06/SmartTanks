@@ -17,7 +17,7 @@ ESP32 ── HTTPS ──► Cloud Function Python ──► Cloud Firestore
 - **Identidad:** Firebase Authentication para las cuentas del panel.
 - **Frontend:** Angular 22, adaptable a móvil/tablet y preparado para añadir componentes Ionic.
 - **Hosting:** GitHub Pages mediante GitHub Actions.
-- **Desarrollo local:** Firebase Emulator Suite para Auth, Firestore y Functions.
+- **Desarrollo local:** pruebas unitarias aisladas con dobles; el panel local usa Firebase productivo.
 
 No se usa MySQL ni Railway en esta versión. La API es la única que escribe: el ESP32 no recibe credenciales administrativas y el navegador queda limitado por las reglas de Firestore.
 
@@ -28,14 +28,14 @@ backend/                 Cloud Function Python y pruebas
 frontend/                Aplicación Angular
 docs/                    Arquitectura y contratos
 .github/workflows/       Despliegue del panel
-firebase.json            Functions, Firestore y emuladores
+firebase.json            Configuración de Functions y Firestore
 firestore.rules          Autorización de datos
 firestore.indexes.json   Índices requeridos por consultas
 ```
 
 ## Primer arranque local
 
-Requisitos: Node.js 24.15 o posterior (también sirve 22.22.3 o posterior), Python 3.12, Java y Firebase CLI.
+Requisitos: Node.js 24.15 o posterior (también sirve 22.22.3 o posterior), Python 3.12 y Firebase CLI.
 
 ```powershell
 Copy-Item .firebaserc.example .firebaserc
@@ -47,20 +47,16 @@ backend\venv\Scripts\python -m pip install -r backend\requirements-dev.txt
 Set-Location frontend
 npm install
 Set-Location ..
-
-npx firebase-tools emulators:start
 ```
-
-En otra terminal:
 
 ```powershell
 Set-Location frontend
 npm start
 ```
 
-El panel abre en `http://localhost:4200`; la UI de emuladores, en `http://localhost:4000`.
+El panel abre en `http://localhost:4200` y usa los servicios productivos configurados en `frontend/public/config.js`.
 
-`frontend/public/config.js` controla el destino mediante `useEmulators`. Con `false`, incluso `localhost` usa Firebase Auth, Firestore y la API productivos. Cambiarlo a `true` solo cuando Emulator Suite esté encendido; así las pruebas aisladas no escriben en producción.
+Mantener `useEmulators` en `false`. No ejecutar pruebas manuales destructivas desde localhost; las pruebas automatizadas aíslan sus dependencias mediante dobles.
 
 ## Despliegue
 
@@ -69,7 +65,7 @@ El panel abre en `http://localhost:4200`; la UI de emuladores, en `http://localh
 1. Crear el proyecto en Firebase y activar Firestore y Authentication.
 2. Cambiar el ID en `.firebaserc`.
 3. Activar Blaze; Cloud Functions exige una cuenta de facturación aun cuando el uso quede dentro de la cuota sin costo.
-4. Configurar `ALLOWED_ORIGINS` con el dominio real de GitHub Pages.
+4. Verificar que `ALLOWED_ORIGINS` incluya el dominio real de GitHub Pages. Este repositorio permite por defecto `https://juanzozaya06.github.io` y `http://localhost:4200`.
 5. Ejecutar:
 
 ```powershell
@@ -94,9 +90,10 @@ La base implementa los endpoints del dispositivo:
 También implementa el onboarding autenticado del panel:
 
 - Firebase Auth con correo y contraseña para registro, sesión persistente y cierre de sesión.
-- `GET /v1/me/context` para recuperar usuario, casa y tanques.
-- `POST /v1/homes` para crear perfil, casa, membresía `owner` y hasta dos tanques.
+- `GET /v1/me/context` para recuperar usuario, casa y tanques ya descubiertos.
+- `POST /v1/homes` para crear perfil, casa y membresía `owner`, sin precrear tanques.
 - `POST /v1/homes/{homeId}/devices/claim` para asociar mediante `deviceId + PIN + nombre`.
+- `PATCH /v1/homes/{homeId}/tanks/{tankId}` para personalizar el nombre de un tanque descubierto.
 - `GET /v1/homes/{homeId}/devices` para listar los SmartTanks asociados.
 
 La API productiva está desplegada en:
@@ -109,9 +106,9 @@ El panel no contiene datos demostrativos. Sin sesión muestra acceso; sin casa m
 
 ## Actualización en tiempo real
 
-Al aceptar un lote nuevo, la API guarda el histórico en `readings` y actualiza `latestReading` dentro de `homes/{homeId}/tanks/{tankId}`. El panel escucha esos documentos con Firestore `onSnapshot()`, por lo que no consulta la API cada 30 segundos.
+Al aceptar un lote nuevo, la API guarda el histórico en `readings`. La primera lectura de cada `sensorId` crea automáticamente `homes/{homeId}/tanks/{deviceId}:{sensorId}`; las siguientes actualizan su `latestReading`. El panel escucha la colección con Firestore `onSnapshot()`, por lo que detecta tanques nuevos sin consultar la API cada 30 segundos.
 
-El usuario crea su cuenta desde Angular y completa el formulario con nombre de la casa, zona horaria, altura, diámetro, capacidad y umbral de nivel bajo de ambos tanques. La API crea la membresía y el panel obtiene el `homeId` desde `/v1/me/context`; no se configura manualmente en el frontend.
+El usuario crea su cuenta desde Angular y completa únicamente el nombre de la casa y la zona horaria. La API crea la membresía y el panel obtiene el `homeId` desde `/v1/me/context`; los tanques solo aparecen después de recibir datos reales.
 
 Antes de usar el registro, habilitar el proveedor **Correo electrónico/contraseña** en Firebase Authentication.
 
@@ -119,7 +116,7 @@ Antes de usar el registro, habilitar el proveedor **Correo electrónico/contrase
 
 Cada equipo debe existir previamente en `devices/{deviceId}` con estado `unclaimed`, un PIN de claim y un secreto individual. Firestore guarda solamente los hashes del PIN y del secreto. El `deviceId` usa el formato `smarttank-<MAC completa de 12 hex>`.
 
-Desde **Agregar SmartTank**, el usuario final ingresa el ID y PIN impresos en el equipo, además de un nombre referencial. Si coinciden, la API asigna el equipo a la casa y conecta automáticamente el canal A con `tank_1` y el canal B con `tank_2`. No existe una ruta web para que el usuario genere credenciales.
+Desde **Agregar SmartTank**, el usuario final ingresa el ID y PIN impresos en el equipo, además de un nombre referencial. Si coinciden, la API asigna el equipo a la casa, pero no crea tanques ni asigna canales. Cada lectura incluye un `sensorId` estable; la API descubre un tanque por sensor y el usuario puede cambiar su nombre desde el panel. No existe una ruta web para generar credenciales.
 
 El auto-registro del ESP32 en su primer arranque está pendiente de decisión. No debe habilitarse sin una credencial de bootstrap: la MAC es pública y falsificable, y un registro existente solo puede considerarse válido después de verificar el secreto individual.
 

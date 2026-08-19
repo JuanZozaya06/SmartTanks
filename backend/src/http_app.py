@@ -11,7 +11,7 @@ from .auth import AuthenticationError, require_device, require_user
 from .config import settings
 from .database import get_firestore_client
 from .device_claim import verify_setup_pin
-from .schemas import DeviceClaim, DeviceEvent, HomeSetup, ReadingBatch
+from .schemas import DeviceClaim, DeviceEvent, HomeSetup, ReadingBatch, TankUpdate
 
 app = Flask(__name__)
 
@@ -30,7 +30,7 @@ def add_cors_headers(response):
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Vary"] = "Origin"
         response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type, X-Device-Id"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, OPTIONS"
     return response
 
 
@@ -64,15 +64,22 @@ def _iso_datetime(value: Any) -> str | None:
     return None
 
 
+def _tank_document_id(device_id: str, sensor_id: str) -> str:
+    return f"{device_id}:{sensor_id}"
+
+
 def _tank_response(tank_id: str, data: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": tank_id,
-        "name": data.get("name"),
+        "deviceId": data.get("deviceId"),
+        "sensorId": data.get("sensorId"),
+        "name": data.get("name") or f"Tanque {data.get('sensorId', '')}".strip(),
         "shape": data.get("shape"),
         "heightCm": data.get("heightCm"),
         "diameterCm": data.get("diameterCm"),
         "capacityLiters": data.get("capacityLiters"),
         "lowLevelPercentage": data.get("lowLevelPercentage", 25),
+        "configurationStatus": data.get("configurationStatus", "pending"),
         "status": data.get("status", "active"),
     }
 
@@ -83,7 +90,6 @@ def _device_response(device_id: str, data: dict[str, Any]) -> dict[str, Any]:
         "label": data.get("label", "SmartTank"),
         "status": data.get("status"),
         "firmwareVersion": data.get("firmwareVersion"),
-        "channels": data.get("channels", []),
         "lastSeenAt": _iso_datetime(data.get("lastSeenAt")),
         "claimedAt": _iso_datetime(data.get("claimedAt")),
     }
@@ -142,10 +148,11 @@ def user_context():
         return _json_error("La casa configurada no existe.", 409)
 
     home_data = home_snapshot.to_dict() or {}
-    tanks = [
-        _tank_response(snapshot.id, snapshot.to_dict() or {})
-        for snapshot in home_ref.collection("tanks").stream()
-    ]
+    tanks = []
+    for snapshot in home_ref.collection("tanks").stream():
+        tank_data = snapshot.to_dict() or {}
+        if tank_data.get("deviceId") and tank_data.get("sensorId"):
+            tanks.append(_tank_response(snapshot.id, tank_data))
     tanks.sort(key=lambda tank: str(tank["id"]))
     return jsonify(
         {
@@ -206,21 +213,6 @@ def create_home():
         merge=True,
     )
 
-    tanks: list[dict[str, Any]] = []
-    for index, tank in enumerate(payload.tanks, start=1):
-        tank_id = f"tank_{index}"
-        tank_data = tank.model_dump(by_alias=True)
-        tank_data.update(
-            {
-                "homeId": home_ref.id,
-                "status": "active",
-                "createdAt": created_at,
-                "updatedAt": created_at,
-            }
-        )
-        write_batch.set(home_ref.collection("tanks").document(tank_id), tank_data)
-        tanks.append(_tank_response(tank_id, tank_data))
-
     write_batch.commit()
     return (
         jsonify(
@@ -237,7 +229,7 @@ def create_home():
                     "role": "owner",
                     "createdAt": _iso_datetime(created_at),
                 },
-                "tanks": tanks,
+                "tanks": [],
             }
         ),
         201,
@@ -263,6 +255,48 @@ def list_devices(home_id: str):
     ]
     devices.sort(key=lambda device: str(device["id"]))
     return jsonify({"devices": devices})
+
+
+@app.route("/v1/homes/<home_id>/tanks/<tank_id>", methods=["PATCH", "OPTIONS"])
+def update_tank(home_id: str, tank_id: str):
+    if request.method == "OPTIONS":
+        return "", 204
+
+    db = get_firestore_client()
+    _, user_id = _authenticated_user()
+    if not _home_manager_role(db, user_id, home_id):
+        return _json_error("Solo un propietario o administrador puede editar tanques.", 403)
+
+    payload = TankUpdate.model_validate(request.get_json(silent=False))
+    tank_ref = db.collection("homes").document(home_id).collection("tanks").document(tank_id)
+    tank_snapshot = tank_ref.get()
+    if not tank_snapshot.exists:
+        return _json_error("El tanque no existe o todavía no ha enviado mediciones.", 404)
+
+    tank_data = tank_snapshot.to_dict() or {}
+    if not tank_data.get("deviceId") or not tank_data.get("sensorId"):
+        return _json_error("El tanque no fue descubierto desde un sensor válido.", 409)
+
+    updated_at = datetime.now(UTC)
+    update = {"name": payload.name, "updatedAt": updated_at}
+    audit_ref = db.collection("auditLogs").document()
+    write_batch = db.batch()
+    write_batch.set(tank_ref, update, merge=True)
+    write_batch.create(
+        audit_ref,
+        {
+            "action": "tank_renamed",
+            "tankId": tank_id,
+            "deviceId": tank_data.get("deviceId"),
+            "sensorId": tank_data.get("sensorId"),
+            "homeId": home_id,
+            "actorUserId": user_id,
+            "createdAt": updated_at,
+        },
+    )
+    write_batch.commit()
+    tank_data.update(update)
+    return jsonify({"tank": _tank_response(tank_id, tank_data)})
 
 
 @app.route("/v1/homes/<home_id>/devices/claim", methods=["POST", "OPTIONS"])
@@ -299,22 +333,10 @@ def claim_device(home_id: str):
         )
         return _json_error("El ID o el PIN del SmartTank son incorrectos.", 403)
 
-    tank_snapshots = list(
-        db.collection("homes").document(home_id).collection("tanks").stream()
-    )
-    tank_snapshots.sort(key=lambda snapshot: snapshot.id)
-    if not tank_snapshots:
-        return _json_error("La casa no tiene tanques configurados.", 409)
-    channels = [
-        {"channel": chr(ord("A") + index), "tankId": snapshot.id}
-        for index, snapshot in enumerate(tank_snapshots[:2])
-    ]
-
     update = {
         "homeId": home_id,
         "label": payload.label,
         "status": "active",
-        "channels": channels,
         "sampleIntervalSeconds": 30,
         "configVersion": 1,
         "claimedAt": now,
@@ -357,71 +379,85 @@ def ingest_readings():
     if not home_id:
         return _json_error("El dispositivo no está asignado a una casa.", 409)
 
-    channel_map = {
-        str(channel["channel"]): str(channel["tankId"])
-        for channel in identity.data.get("channels", [])
-        if "channel" in channel and "tankId" in channel
-    }
-    invalid_channels = sorted({item.tank_channel for item in payload.readings if item.tank_channel not in channel_map})
-    if invalid_channels:
-        return _json_error("El dispositivo intentó publicar canales no asignados.", 403, invalid_channels)
-
     received_at = datetime.now(UTC)
     refs = [
         db.collection("readings").document(
-            f"{identity.device_id}:{item.sequence}:{item.tank_channel}"
+            f"{identity.device_id}:{item.sequence}:{item.sensor_id}"
         )
         for item in payload.readings
     ]
+    tank_refs_by_sensor = {
+        sensor_id: (
+            db.collection("homes")
+            .document(home_id)
+            .collection("tanks")
+            .document(_tank_document_id(identity.device_id, sensor_id))
+        )
+        for sensor_id in {item.sensor_id for item in payload.readings}
+    }
     existing_ids = {snapshot.id for snapshot in db.get_all(refs) if snapshot.exists}
+    existing_tank_ids = {
+        snapshot.id
+        for snapshot in db.get_all(list(tank_refs_by_sensor.values()))
+        if snapshot.exists
+    }
     write_batch = db.batch()
     accepted: list[dict[str, Any]] = []
-    latest_by_tank: dict[str, tuple[int, dict[str, Any]]] = {}
+    latest_by_tank: dict[str, tuple[int, str, dict[str, Any]]] = {}
 
     for item, document_ref in zip(payload.readings, refs, strict=True):
         status = "duplicate" if document_ref.id in existing_ids else "created"
         accepted.append(
-            {"sequence": item.sequence, "tankChannel": item.tank_channel, "status": status}
+            {"sequence": item.sequence, "sensorId": item.sensor_id, "status": status}
         )
         if status == "duplicate":
             continue
 
+        tank_id = _tank_document_id(identity.device_id, item.sensor_id)
         document = item.model_dump(by_alias=True)
         document.update(
             {
                 "deviceId": identity.device_id,
                 "homeId": home_id,
-                "tankId": channel_map[item.tank_channel],
+                "tankId": tank_id,
                 "bootSessionId": payload.boot_session_id,
                 "receivedAt": received_at,
             }
         )
         write_batch.create(document_ref, document)
 
-        tank_id = channel_map[item.tank_channel]
         current_latest = latest_by_tank.get(tank_id)
         if current_latest is None or item.sequence > current_latest[0]:
-            latest_by_tank[tank_id] = (item.sequence, document)
+            latest_by_tank[tank_id] = (item.sequence, item.sensor_id, document)
 
-    if any(item["status"] == "created" for item in accepted):
-        for tank_id, (_, latest_reading) in latest_by_tank.items():
-            tank_ref = (
-                db.collection("homes")
-                .document(home_id)
-                .collection("tanks")
-                .document(tank_id)
-            )
-            write_batch.set(
-                tank_ref,
+    for tank_id, (_, sensor_id, latest_reading) in latest_by_tank.items():
+        tank_document = {
+            "deviceId": identity.device_id,
+            "sensorId": sensor_id,
+            "latestReading": latest_reading,
+            "lastCommunicationAt": received_at,
+            "status": "active",
+            "updatedAt": received_at,
+        }
+        if tank_id not in existing_tank_ids:
+            tank_document.update(
                 {
-                    "deviceId": identity.device_id,
-                    "latestReading": latest_reading,
-                    "lastCommunicationAt": received_at,
-                    "status": "active",
-                },
-                merge=True,
+                    "homeId": home_id,
+                    "name": f"Tanque {sensor_id}",
+                    "configurationStatus": "pending",
+                    "lowLevelPercentage": 25,
+                    "discoveredAt": received_at,
+                    "createdAt": received_at,
+                }
             )
-        write_batch.commit()
+        write_batch.set(tank_refs_by_sensor[sensor_id], tank_document, merge=True)
+
+    write_batch.set(
+        db.collection("devices").document(identity.device_id),
+        {"lastSeenAt": received_at, "updatedAt": received_at},
+        merge=True,
+    )
+    write_batch.commit()
 
     return jsonify({"accepted": accepted, "receivedAt": received_at.isoformat()}), 202
 
@@ -466,7 +502,7 @@ def device_config():
         {
             "deviceId": identity.device_id,
             "sampleIntervalSeconds": identity.data.get("sampleIntervalSeconds", 30),
-            "channels": identity.data.get("channels", []),
+            "sensorMode": "discovery",
             "configVersion": identity.data.get("configVersion", 1),
         }
     )

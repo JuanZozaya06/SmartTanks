@@ -2,6 +2,7 @@
 @deviceId = smarttank-84f703123456
 @deviceSecret = reemplazar-secreto
 @userToken = reemplazar-id-token-firebase-auth
+@tankId = smarttank-84f703123456:pressure-a
 
 ### Estado de la API
 GET {{api}}/v1/health
@@ -10,7 +11,7 @@ GET {{api}}/v1/health
 GET {{api}}/v1/me/context
 Authorization: Bearer {{userToken}}
 
-### Crear la primera casa y sus tanques
+### Crear la primera casa sin precrear tanques
 POST {{api}}/v1/homes
 Authorization: Bearer {{userToken}}
 Content-Type: application/json
@@ -18,23 +19,7 @@ Content-Type: application/json
 {
   "name": "Casa principal",
   "timezone": "America/Caracas",
-  "displayName": "Usuario",
-  "tanks": [
-    {
-      "name": "Tanque principal",
-      "heightCm": 200,
-      "diameterCm": 51,
-      "capacityLiters": 408.6,
-      "lowLevelPercentage": 25
-    },
-    {
-      "name": "Tanque auxiliar",
-      "heightCm": 200,
-      "diameterCm": 51,
-      "capacityLiters": 408.6,
-      "lowLevelPercentage": 25
-    }
-  ]
+  "displayName": "Usuario"
 }
 
 ### Asociar un SmartTank preaprovisionado
@@ -57,7 +42,7 @@ GET {{api}}/v1/device/config
 X-Device-Id: {{deviceId}}
 Authorization: Bearer {{deviceSecret}}
 
-### Lote idempotente con ambos canales
+### Lote idempotente con dos sensores
 POST {{api}}/v1/device/readings/batch
 Content-Type: application/json
 X-Device-Id: {{deviceId}}
@@ -69,7 +54,7 @@ Authorization: Bearer {{deviceSecret}}
   "readings": [
     {
       "sequence": 18422,
-      "tankChannel": "A",
+      "sensorId": "pressure-a",
       "observedAt": "2026-08-18T15:20:00Z",
       "timestampQuality": "verified",
       "elapsedMs": 910000,
@@ -81,7 +66,7 @@ Authorization: Bearer {{deviceSecret}}
     },
     {
       "sequence": 18422,
-      "tankChannel": "B",
+      "sensorId": "pressure-b",
       "observedAt": "2026-08-18T15:20:00Z",
       "timestampQuality": "verified",
       "elapsedMs": 910000,
@@ -92,6 +77,15 @@ Authorization: Bearer {{deviceSecret}}
       "wifiRssi": -62
     }
   ]
+}
+
+### Personalizar el nombre de un tanque descubierto
+PATCH {{api}}/v1/homes/home_01/tanks/{{tankId}}
+Authorization: Bearer {{userToken}}
+Content-Type: application/json
+
+{
+  "name": "Tanque del patio"
 }
 
 ### Evento de arranque

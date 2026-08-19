@@ -182,7 +182,7 @@ Cada lectura pendiente debe guardar:
 sequence              número incremental
 bootSessionId         identificador de arranque
 elapsedMs             milisegundos desde el arranque
-tank1/tank2           presión, altura, porcentaje, litros
+sensorId + medición   presión, altura, porcentaje y litros de cada sensor
 timestamp             fecha/hora si ya era conocida; nula si no
 timestampQuality      verified | estimated | pending
 ```
@@ -254,17 +254,14 @@ Una casa puede tener varios miembros. El ESP32 pertenece a una casa; no directam
 
 ```json
 {
-  "id": "dev_01J...",
+  "id": "smarttank-84f703123456",
   "serialNumber": "CASA-ESP-001",
   "homeId": "home_01J...",
   "status": "active",
   "firmwareVersion": "1.0.0",
   "deviceSecretHash": "...",
   "setupPinHash": "...",
-  "channels": [
-    { "channel": "A", "tankId": "tank_1" },
-    { "channel": "B", "tankId": "tank_2" }
-  ]
+  "sensorMode": "discovery"
 }
 ```
 
@@ -274,17 +271,13 @@ El dispositivo tiene una sola `homeId` activa. Si se mueve a otra casa, se reali
 
 ```json
 {
-  "id": "tank_1",
+  "id": "smarttank-84f703123456:pressure-a",
   "homeId": "home_01J...",
-  "name": "Tanque principal",
-  "shape": "cylinder",
-  "heightCm": 200,
-  "diameterCm": 51,
-  "capacityLiters": 408,
-  "calibration": {
-    "emptyRaw": 0,
-    "fullRaw": 0
-  },
+  "deviceId": "smarttank-84f703123456",
+  "sensorId": "pressure-a",
+  "name": "Tanque pressure-a",
+  "configurationStatus": "pending",
+  "discoveredAt": "2026-08-18T15:20:03Z",
   "status": "active"
 }
 ```
@@ -293,10 +286,11 @@ El dispositivo tiene una sola `homeId` activa. Si se mueve a otra casa, se reali
 
 ```json
 {
-  "id": "dev_01J:18422",
-  "deviceId": "dev_01J...",
+  "id": "smarttank-84f703123456:18422:pressure-a",
+  "deviceId": "smarttank-84f703123456",
+  "sensorId": "pressure-a",
   "homeId": "home_01J...",
-  "tankId": "tank_1",
+  "tankId": "smarttank-84f703123456:pressure-a",
   "sequence": 18422,
   "observedAt": "2026-08-18T15:20:00Z",
   "receivedAt": "2026-08-18T15:20:03Z",
@@ -339,8 +333,8 @@ El flujo se simplifica: no se requiere botón físico.
 4. Escribe o escanea el `deviceId` e introduce el PIN.
 5. El API verifica el PIN y que el dispositivo no esté asignado.
 6. El backend vincula `deviceId → homeId`.
-7. El PIN inicial queda invalidado.
-8. El ESP32 continúa enviando datos sin conocer el usuario ni la casa.
+7. El ESP32 continúa enviando datos sin conocer el usuario ni la casa.
+8. La primera lectura de cada `sensorId` crea el tanque correspondiente en esa casa.
 
 El ESP32 usa `deviceId` + su credencial privada para cada llamada al API. El usuario nunca necesita conocer esa credencial.
 
@@ -350,11 +344,11 @@ Medidas mínimas:
 - Un secreto distinto por ESP32; nunca una clave global compartida.
 - Guardar PIN y secreto como hashes/cifrados en el backend; no en texto plano.
 - Rate limiting de intentos de PIN.
-- Lecturas idempotentes usando `deviceId + sequence` para tolerar reintentos sin duplicar datos.
+- Lecturas idempotentes usando `deviceId + sequence + sensorId` para tolerar reintentos sin duplicar datos.
 - Revocación y rotación de credenciales de dispositivo.
 - Transferencia de dispositivo: solo el dueño/admin de la casa actual puede liberar/generar un nuevo PIN de transferencia.
 - Registrar auditoría de vinculación, desvinculación y cambios de calibración.
-- El API valida que un dispositivo solo publique para los tanques asignados en sus canales.
+- El API exige un `sensorId` lógico estable y descubre un tanque por cada sensor autenticado del dispositivo.
 
 ## Endpoints REST iniciales
 
@@ -370,11 +364,11 @@ Ejemplo de lote:
 
 ```json
 {
-  "deviceId": "dev_01J...",
+  "deviceId": "smarttank-84f703123456",
   "readings": [
     {
       "sequence": 18422,
-      "tankChannel": "A",
+      "sensorId": "pressure-a",
       "observedAt": "2026-08-18T15:20:00Z",
       "timestampQuality": "verified",
       "pressureKpa": 13.4,
@@ -384,13 +378,14 @@ Ejemplo de lote:
 }
 ```
 
-La respuesta debe indicar qué secuencias fueron aceptadas. El ESP32 borra de la cola únicamente esas lecturas confirmadas.
+La respuesta debe indicar qué combinaciones `sequence + sensorId` fueron aceptadas. El ESP32 borra de la cola únicamente esas lecturas confirmadas.
 
 ### Para la aplicación
 
 ```text
 POST /v1/homes
 POST /v1/homes/{homeId}/devices/claim
+PATCH /v1/homes/{homeId}/tanks/{tankId}
 GET  /v1/homes/{homeId}/dashboard
 GET  /v1/tanks/{tankId}/readings?from=...&to=...
 GET  /v1/tanks/{tankId}/statistics?period=month
@@ -401,7 +396,8 @@ POST /v1/devices/{deviceId}/transfer-pin
 
 La primera pantalla debería mostrar:
 
-- Tanque 1 y tanque 2: litros, porcentaje, nivel y hora de última lectura.
+- Un tanque por cada sensor descubierto: presión y los valores de litros, porcentaje o nivel que estén disponibles.
+- Nombre personalizable sin cambiar la identidad técnica `deviceId + sensorId`.
 - Estado de conectividad: dispositivo online/offline y última comunicación.
 - Alertas: nivel bajo, lectura desactualizada, sensor con error.
 - Gráfica de consumo por día, semana y mes.

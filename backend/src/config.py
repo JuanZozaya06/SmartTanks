@@ -11,7 +11,10 @@ class Settings:
 
 
 def load_settings() -> Settings:
-    origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:4200")
+    origins = os.getenv(
+        "ALLOWED_ORIGINS",
+        "http://localhost:4200,https://juanzozaya06.github.io",
+    )
     return Settings(
         allowed_origins=tuple(origin.strip() for origin in origins.split(",") if origin.strip()),
         max_batch_size=int(os.getenv("MAX_BATCH_SIZE", "100")),
@@ -19,4 +22,3 @@ def load_settings() -> Settings:
 
 
 settings = load_settings()
-

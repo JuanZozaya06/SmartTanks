@@ -39,11 +39,11 @@
   <section class="summary" aria-label="Resumen">
     <article>
       <span>Nivel combinado</span>
-      <strong>{{ combinedPercentage() }}%</strong>
+      <strong>{{ combinedPercentage() === null ? '—' : combinedPercentage() + '%' }}</strong>
     </article>
     <article>
       <span>Agua disponible</span>
-      <strong>{{ availableLiters() }} L</strong>
+      <strong>{{ availableLiters() === null ? '—' : availableLiters() + ' L' }}</strong>
     </article>
     <article>
       <span>Datos</span>
@@ -58,47 +58,71 @@
   </section>
 
   <section class="tank-grid" aria-label="Estado de los tanques">
-    @for (tank of tanks(); track tank.id) {
-      <article class="tank-card" [class.tank-card--low]="tank.state === 'low' && tank.hasReading">
+    @for (tank of tanks(); track tank.tankId) {
+      <article class="tank-card" [class.tank-card--low]="tank.state === 'low'">
         <div class="tank-card__heading">
           <div>
             <p class="label">
-              @if (!tank.hasReading) { Sin lecturas }
+              @if (tank.state === 'unknown') { Lectura recibida · pendiente de calibración }
               @else if (tank.state === 'low') { Nivel bajo }
               @else { Nivel estable }
             </p>
             <h2>{{ tank.name }}</h2>
+            <small>{{ tank.sensorId }}</small>
           </div>
-          <span class="percentage">{{ tank.hasReading ? tank.percentage : 0 }}%</span>
+          <span class="percentage">{{ tank.percentage === null ? '—' : tank.percentage + '%' }}</span>
         </div>
 
         <div class="gauge" aria-hidden="true">
-          <div class="gauge__water" [style.height.%]="tank.percentage"></div>
+          <div class="gauge__water" [style.height.%]="tank.percentage ?? 0"></div>
           <div class="gauge__mark gauge__mark--high"></div>
           <div class="gauge__mark gauge__mark--low"></div>
         </div>
 
         <dl class="metrics">
           <div>
-            <dt>Disponible</dt>
-            <dd>{{ tank.liters }} L</dd>
-          </div>
-          <div>
-            <dt>Capacidad</dt>
-            <dd>{{ tank.capacityLiters }} L</dd>
+            <dt>Presión</dt>
+            <dd>{{ tank.pressureKpa === null ? '—' : tank.pressureKpa + ' kPa' }}</dd>
           </div>
           <div>
             <dt>Altura</dt>
-            <dd>{{ tank.levelCm }} cm</dd>
+            <dd>{{ tank.waterHeightCm === null ? '—' : tank.waterHeightCm + ' cm' }}</dd>
+          </div>
+          <div>
+            <dt>Disponible</dt>
+            <dd>{{ tank.liters === null ? '—' : tank.liters + ' L' }}</dd>
           </div>
         </dl>
 
-        <p class="updated">
-          @if (tank.hasReading) {
-            Actualizado {{ tank.updatedAt | date:'HH:mm:ss' }}
-          } @else {
-            Esperando la primera lectura del SmartTank
+        @if (editingTankId() === tank.tankId) {
+          <div class="tank-rename">
+            <input
+              [value]="tankNameDraft()"
+              (input)="tankNameDraft.set($any($event.target).value)"
+              maxlength="80"
+              aria-label="Nuevo nombre del tanque"
+            />
+            <button class="add-device" type="button" (click)="saveTankName(tank)" [disabled]="savingTankId() === tank.tankId">
+              Guardar
+            </button>
+            <button type="button" class="logout" (click)="cancelRename()">Cancelar</button>
+          </div>
+          @if (tankRenameError()) {
+            <p class="form-error" role="alert">{{ tankRenameError() }}</p>
           }
+        } @else {
+          <button class="logout" type="button" (click)="startRename(tank)">Cambiar nombre</button>
+        }
+
+        <p class="updated">Actualizado {{ tank.updatedAt | date:'HH:mm:ss' }}</p>
+      </article>
+    } @empty {
+      <article class="tank-card tank-empty">
+        <p class="eyebrow">SIN TANQUES DESCUBIERTOS</p>
+        <h2>Esperando la primera medición</h2>
+        <p>
+          Asocia un SmartTank. Cuando envíe datos, aparecerá aquí un tanque por cada sensor
+          detectado.
         </p>
       </article>
     }

@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
-from src.schemas import DeviceClaim, HomeSetup, ReadingBatch
+from src.schemas import DeviceClaim, HomeSetup, ReadingBatch, TankUpdate
 
 
 def test_valid_reading_batch() -> None:
@@ -14,7 +14,7 @@ def test_valid_reading_batch() -> None:
             "readings": [
                 {
                     "sequence": 42,
-                    "tankChannel": "A",
+                    "sensorId": "pressure-a",
                     "observedAt": datetime.now(UTC).isoformat(),
                     "timestampQuality": "verified",
                     "pressureKpa": 13.4,
@@ -24,7 +24,7 @@ def test_valid_reading_batch() -> None:
             ],
         }
     )
-    assert batch.readings[0].tank_channel == "A"
+    assert batch.readings[0].sensor_id == "pressure-a"
 
 
 def test_rejects_timestamp_without_timezone() -> None:
@@ -35,7 +35,7 @@ def test_rejects_timestamp_without_timezone() -> None:
                 "readings": [
                     {
                         "sequence": 42,
-                        "tankChannel": "A",
+                        "sensorId": "pressure-a",
                         "observedAt": "2026-08-18T15:20:00",
                         "timestampQuality": "verified",
                         "pressureKpa": 13.4,
@@ -45,20 +45,13 @@ def test_rejects_timestamp_without_timezone() -> None:
         )
 
 
-def test_home_setup_requires_real_tank_dimensions() -> None:
+def test_home_setup_rejects_precreated_tanks() -> None:
     with pytest.raises(ValidationError):
         HomeSetup.model_validate(
             {
                 "name": "Mi casa",
                 "timezone": "America/Caracas",
-                "tanks": [
-                    {
-                        "name": "Tanque principal",
-                        "heightCm": 0,
-                        "diameterCm": 51,
-                        "capacityLiters": 408,
-                    }
-                ],
+                "tanks": [],
             }
         )
 
@@ -81,3 +74,8 @@ def test_device_claim_requires_efuse_based_device_id() -> None:
                 "label": "SmartTank del patio",
             }
         )
+
+
+def test_tank_name_cannot_be_blank() -> None:
+    with pytest.raises(ValidationError):
+        TankUpdate.model_validate({"name": "   "})

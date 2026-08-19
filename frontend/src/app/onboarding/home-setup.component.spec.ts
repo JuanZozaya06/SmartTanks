@@ -5,21 +5,27 @@ import { ApiService } from '../core/api.service';
 import { HomeSetupComponent } from './home-setup.component';
 
 describe('HomeSetupComponent', () => {
+  let createHome: jasmine.Spy;
+
   beforeEach(async () => {
+    createHome = jasmine.createSpy('createHome').and.returnValue(of({}));
     await TestBed.configureTestingModule({
       imports: [HomeSetupComponent],
-      providers: [{ provide: ApiService, useValue: { createHome: () => of({}) } }],
+      providers: [{ provide: ApiService, useValue: { createHome } }],
     }).compileComponents();
   });
 
-  it('calculates cylindrical capacity from real dimensions', () => {
+  it('creates a home without precreating tanks', async () => {
     const fixture = TestBed.createComponent(HomeSetupComponent);
     const component = fixture.componentInstance;
-    component.form.controls.tank1Height.setValue(200);
-    component.form.controls.tank1Diameter.setValue(51);
+    component.form.setValue({ homeName: 'Mi casa', timezone: 'America/Caracas' });
 
-    component.calculateCapacity(1);
+    await component.submit();
 
-    expect(component.form.controls.tank1Capacity.value).toBeCloseTo(408.6, 1);
+    expect(createHome).toHaveBeenCalledOnceWith({
+      name: 'Mi casa',
+      timezone: 'America/Caracas',
+      displayName: null,
+    });
   });
 });

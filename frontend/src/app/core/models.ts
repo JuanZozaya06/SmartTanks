@@ -14,12 +14,15 @@ export interface HomeSummary {
 
 export interface TankConfiguration {
   id: string;
+  deviceId: string;
+  sensorId: string;
   name: string;
-  shape: 'cylinder';
-  heightCm: number;
-  diameterCm: number;
-  capacityLiters: number;
+  shape: 'cylinder' | null;
+  heightCm: number | null;
+  diameterCm: number | null;
+  capacityLiters: number | null;
   lowLevelPercentage: number;
+  configurationStatus: 'pending' | 'configured';
   status: 'active' | 'inactive';
 }
 
@@ -29,24 +32,10 @@ export interface AppContext {
   tanks: TankConfiguration[];
 }
 
-export interface TankSetupRequest {
-  name: string;
-  heightCm: number;
-  diameterCm: number;
-  capacityLiters: number;
-  lowLevelPercentage: number;
-}
-
 export interface HomeSetupRequest {
   name: string;
   timezone: string;
   displayName: string | null;
-  tanks: TankSetupRequest[];
-}
-
-export interface DeviceChannel {
-  channel: string;
-  tankId: string;
 }
 
 export interface DeviceSummary {
@@ -54,7 +43,6 @@ export interface DeviceSummary {
   label: string;
   status: 'active' | 'inactive' | 'unclaimed';
   firmwareVersion: string | null;
-  channels: DeviceChannel[];
   lastSeenAt: string | null;
   claimedAt: string | null;
 }

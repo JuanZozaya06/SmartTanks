@@ -38,7 +38,7 @@ ESP32 ── HTTPS ──► Cloud Function Python ──► Cloud Firestore
 - Usuarios: Firebase Authentication.
 - Frontend: Angular 22, responsive para teléfono y tablet; Ionic puede añadirse posteriormente si se decide empaquetar una aplicación móvil.
 - Hosting web: GitHub Pages mediante `.github/workflows/deploy-frontend.yml`.
-- Desarrollo local: Firebase Emulator Suite para Auth, Firestore y Functions.
+- Desarrollo local: pruebas unitarias con dobles locales; el proyecto no usa Firebase Emulator Suite.
 - Plan Firebase: Blaze, necesario para desplegar Functions. Mantener límites de instancias y vigilar consumo.
 
 No introducir Railway, un servidor permanente, Raspberry Pi o comunicación directa tablet–ESP32 salvo que se apruebe una nueva decisión arquitectónica.
@@ -66,7 +66,7 @@ homes/{homeId}
 homes/{homeId}/members/{userId}
 homes/{homeId}/tanks/{tankId}
 devices/{deviceId}
-readings/{deviceId}:{sequence}:{channel}
+readings/{deviceId}:{sequence}:{sensorId}
 deviceEvents/{deviceId}:{bootSessionId}:{sequence}:{eventType}
 ```
 
@@ -75,11 +75,13 @@ Reglas que deben preservarse:
 - El dispositivo pertenece a una casa (`homeId`), no a una persona.
 - Cada unidad se preaprovisiona antes de llegar al usuario con `deviceId`, PIN de claim y secreto individual. Firestore conserva únicamente los hashes del PIN y del secreto, con estado inicial `unclaimed`.
 - El `deviceId` público usa la MAC completa: `smarttank-<12 hex>`. No usar solo los últimos ocho hexadecimales como identidad definitiva.
-- El usuario final no crea credenciales: reclama una unidad existente enviando `deviceId + setupPin + label`; la API asigna `homeId`, canales y estado `active`.
+- El usuario final no crea credenciales: reclama una unidad existente enviando `deviceId + setupPin + label`; la API asigna `homeId` y estado `active`, sin crear tanques ni mapear canales.
 - Una casa puede tener miembros con roles `owner`, `admin` o `viewer`.
-- Los canales del dispositivo determinan los tanques para los que puede publicar.
-- Las lecturas son idempotentes. El ID incluye `deviceId`, `sequence` y `channel`; un reintento devuelve `duplicate` y cuenta como confirmado sin sobrescribir el original.
-- La API actualiza `homes/{homeId}/tanks/{tankId}.latestReading` en el mismo batch que crea el histórico. Angular escucha ese documento con `onSnapshot()`; no debe hacer polling del estado actual.
+- Cada ESP32 conserva un único `deviceId`. Cada sensor utiliza un `sensorId` lógico, estable entre reinicios; no otorgar credenciales de dispositivo separadas a sensores analógicos.
+- `POST /v1/homes` crea la casa sin tanques. La primera lectura autenticada de cada combinación `deviceId + sensorId` descubre y crea el tanque correspondiente bajo `homes/{homeId}/tanks/{deviceId}:{sensorId}`.
+- Un tanque descubierto comienza con `configurationStatus: pending` y nombre referencial; el usuario puede renombrarlo mediante la API. No mostrar documentos antiguos o incompletos que carezcan de `deviceId`, `sensorId` o `latestReading`.
+- Las lecturas son idempotentes. El ID incluye `deviceId`, `sequence` y `sensorId`; un reintento devuelve `duplicate` y cuenta como confirmado sin sobrescribir el original.
+- La API actualiza `homes/{homeId}/tanks/{tankId}.latestReading` en el mismo batch que crea el histórico. Angular escucha la colección de tanques con `onSnapshot()`; no debe hacer polling del estado actual.
 - Distinguir siempre `observedAt` (momento medido) de `receivedAt` (momento recibido por el servidor).
 - `timestampQuality` solo puede ser `verified`, `estimated` o `pending`.
 - Conservar `bootSessionId` y `elapsedMs` para reconstruir tiempo y analizar reinicios.
@@ -101,9 +103,10 @@ GET  /v1/me/context
 POST /v1/homes
 GET  /v1/homes/{homeId}/devices
 POST /v1/homes/{homeId}/devices/claim
+PATCH /v1/homes/{homeId}/tanks/{tankId}
 ```
 
-El registro, inicio y cierre de sesión se realizan con Firebase Auth en el navegador. `POST /v1/homes` crea usuario de aplicación, casa, membresía `owner` y tanques en un batch; el navegador nunca escribe estos documentos directamente.
+El registro, inicio y cierre de sesión se realizan con Firebase Auth en el navegador. `POST /v1/homes` crea usuario de aplicación, casa y membresía `owner` en un batch; los tanques aparecen únicamente después de recibir mediciones reales. El navegador nunca escribe estos documentos directamente.
 
 Rutas de usuario pendientes:
 
@@ -134,9 +137,9 @@ Cuando cambie un contrato, actualizar el esquema, pruebas, `docs/api-examples.ht
 - Mantener Angular con componentes standalone y estilos SCSS.
 - En todos los textos visibles para el usuario, llamar al equipo **SmartTank**; reservar **ESP32** para documentación técnica, código y diagnóstico interno.
 - Obtener Firebase y `apiBaseUrl` mediante `frontend/public/config.js` y `runtime-config.ts`; no dispersar URLs o configuración por componentes.
-- Respetar `runtimeConfig.useEmulators`: con `true`, Auth, Firestore y API apuntan a Emulator Suite; con `false`, incluso localhost usa producción. No cambiar este indicador silenciosamente ni ejecutar pruebas destructivas contra producción.
+- Mantener `runtimeConfig.useEmulators` en `false`. Incluso localhost usa producción; no intentar iniciar Emulator Suite ni ejecutar pruebas destructivas contra producción.
 - No usar datos demostrativos. Mostrar acceso sin sesión, onboarding sin casa y datos reales con contexto válido.
-- Iniciar listeners de tanques solo con usuario autenticado y casa devuelta por `/v1/me/context`.
+- Iniciar un listener sobre la colección `homes/{homeId}/tanks` solo con usuario autenticado y casa devuelta por `/v1/me/context`, para descubrir sensores nuevos sin recargar la página.
 - Toda operación de escritura y toda regla de negocio pasa por `ApiService` hacia el backend.
 - Las lecturas directas de Firestore, cuando se implementen, deben respetar membresía de casa y ventanas de consulta limitadas.
 - Diseñar primero para tablet y teléfono: dos tanques, última lectura, estado online/offline, alertas y gráficas por día/semana/mes.
@@ -151,7 +154,8 @@ Cuando cambie un contrato, actualizar el esquema, pruebas, `docs/api-examples.ht
 - Intervalo inicial recomendado: 30 segundos; 60 segundos sigue siendo una decisión posible.
 - La medición continúa sin Internet mientras exista energía.
 - Guardar en flash solo las lecturas no confirmadas, en una cola FIFO persistente con límite de tamaño.
-- Borrar de la cola únicamente las combinaciones `sequence + channel` confirmadas por la API.
+- Cada sensor debe enviar un `sensorId` lógico estable, por ejemplo `pressure-a`; para sensores analógicos sin serial, usar el conector o un ID persistido, nunca uno nuevo por arranque.
+- Borrar de la cola únicamente las combinaciones `sequence + sensorId` confirmadas por la API.
 - Sin RTC, conservar `elapsedMs`; reconstruir horas tras sincronizar NTP y marcar esas lecturas como `estimated`.
 - Enviar eventos de arranque, Wi-Fi, Internet, sincronización y sensores. Activar watchdog y reintento con espera progresiva.
 - Nunca incrustar claves administrativas de Firebase en el firmware.
@@ -189,19 +193,13 @@ npm run build
 Pop-Location
 ```
 
-Para cambios de Functions o Firestore, comprobar además el emulador:
-
-```powershell
-npx firebase-tools emulators:start
-```
-
-Verificar al menos:
+No usar Firebase Emulator Suite. Las pruebas automatizadas deben aislar Firestore y Auth mediante dobles o mocks. Cuando el usuario autorice explícitamente un despliegue de Functions, verificar al menos:
 
 ```text
-http://127.0.0.1:5001/smarttanks-830ba/us-east1/api/v1/health
+https://us-east1-smarttanks-830ba.cloudfunctions.net/api/v1/health
 ```
 
-La respuesta esperada es `{"service":"smart-tanks-api","status":"ok"}`. Detener los emuladores al terminar las pruebas.
+La respuesta esperada es `{"service":"smart-tanks-api","status":"ok"}`. Las comprobaciones productivas deben ser no destructivas salvo autorización expresa.
 
 ## Despliegues y cambios externos
 

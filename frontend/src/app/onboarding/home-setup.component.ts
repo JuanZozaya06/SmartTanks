@@ -26,37 +26,12 @@ export class HomeSetupComponent {
       Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Caracas',
       Validators.required,
     ],
-    tank1Name: ['Tanque principal', [Validators.required, Validators.maxLength(80)]],
-    tank1Height: [null as number | null, [Validators.required, Validators.min(1)]],
-    tank1Diameter: [null as number | null, [Validators.required, Validators.min(1)]],
-    tank1Capacity: [null as number | null, [Validators.required, Validators.min(1)]],
-    tank1LowLevel: [25, [Validators.required, Validators.min(0), Validators.max(100)]],
-    tank2Name: ['Tanque auxiliar', [Validators.required, Validators.maxLength(80)]],
-    tank2Height: [null as number | null, [Validators.required, Validators.min(1)]],
-    tank2Diameter: [null as number | null, [Validators.required, Validators.min(1)]],
-    tank2Capacity: [null as number | null, [Validators.required, Validators.min(1)]],
-    tank2LowLevel: [25, [Validators.required, Validators.min(0), Validators.max(100)]],
   });
-
-  calculateCapacity(tank: 1 | 2): void {
-    const heightControl = this.form.controls[`tank${tank}Height`];
-    const diameterControl = this.form.controls[`tank${tank}Diameter`];
-    const height = Number(heightControl.value);
-    const diameter = Number(diameterControl.value);
-    if (height <= 0 || diameter <= 0) {
-      this.error.set('Ingresa altura y diámetro antes de calcular la capacidad.');
-      return;
-    }
-
-    const liters = (Math.PI * Math.pow(diameter / 2, 2) * height) / 1000;
-    this.form.controls[`tank${tank}Capacity`].setValue(Math.round(liters * 10) / 10);
-    this.error.set(null);
-  }
 
   async submit(): Promise<void> {
     if (this.form.invalid) {
       this.form.markAllAsTouched();
-      this.error.set('Completa las medidas reales de los dos tanques.');
+      this.error.set('Completa el nombre y la zona horaria de la casa.');
       return;
     }
 
@@ -65,22 +40,6 @@ export class HomeSetupComponent {
       name: value.homeName.trim(),
       timezone: value.timezone.trim(),
       displayName: this.displayName(),
-      tanks: [
-        {
-          name: value.tank1Name.trim(),
-          heightCm: Number(value.tank1Height),
-          diameterCm: Number(value.tank1Diameter),
-          capacityLiters: Number(value.tank1Capacity),
-          lowLevelPercentage: Number(value.tank1LowLevel),
-        },
-        {
-          name: value.tank2Name.trim(),
-          heightCm: Number(value.tank2Height),
-          diameterCm: Number(value.tank2Diameter),
-          capacityLiters: Number(value.tank2Capacity),
-          lowLevelPercentage: Number(value.tank2LowLevel),
-        },
-      ],
     };
 
     this.submitting.set(true);
