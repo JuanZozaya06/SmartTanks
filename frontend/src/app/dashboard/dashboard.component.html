@@ -198,7 +198,11 @@
             <p class="form-error" role="alert">{{ tankConfigurationError() }}</p>
           }
         } @else if (canManageTanks()) {
-          <button class="logout" type="button" (click)="startTankConfiguration(tank)">
+          <button
+            class="logout tank-configuration-trigger"
+            type="button"
+            (click)="startTankConfiguration(tank)"
+          >
             {{ tank.configurationStatus === 'configured' ? 'Editar configuración' : 'Configurar tanque' }}
           </button>
         }
